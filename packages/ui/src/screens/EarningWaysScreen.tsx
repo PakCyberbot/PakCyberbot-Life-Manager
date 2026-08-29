@@ -110,17 +110,19 @@ export function EarningWaysScreen() {
                 {item.notes && <p className="mt-1.5 line-clamp-2 text-xs text-muted">{item.notes}</p>}
               </button>
               <div className="flex items-center justify-between gap-2 pt-1">
-                <Select
-                  value={item.status}
-                  onChange={(e) => updateStatus(item.id, e.target.value as EarningWayStatus)}
-                  className="h-8 w-auto text-xs"
-                >
-                  {(Object.keys(STATUS_LABEL) as EarningWayStatus[]).map((s) => (
-                    <option key={s} value={s}>
-                      {STATUS_LABEL[s]}
-                    </option>
-                  ))}
-                </Select>
+                <div className="w-32 shrink-0">
+                  <Select
+                    value={item.status}
+                    onChange={(e) => updateStatus(item.id, e.target.value as EarningWayStatus)}
+                    className="h-8 text-xs"
+                  >
+                    {(Object.keys(STATUS_LABEL) as EarningWayStatus[]).map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_LABEL[s]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={STATUS_TONE[item.status]}>{item.guideOverview ? 'Guide ready' : 'No guide yet'}</Badge>
                   <button onClick={() => removeItem(item.id)} className="text-muted hover:text-red-500">

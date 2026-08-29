@@ -159,17 +159,19 @@ function EntertainmentCard({
       )}
 
       <div className="flex items-center justify-between gap-2 pt-1">
-        <Select
-          value={item.status}
-          onChange={(e) => onStatusChange(e.target.value as EntertainmentStatus)}
-          className="h-8 w-auto text-xs"
-        >
-          {(Object.keys(STATUS_LABEL) as EntertainmentStatus[]).map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </Select>
+        <div className="w-32 shrink-0">
+          <Select
+            value={item.status}
+            onChange={(e) => onStatusChange(e.target.value as EntertainmentStatus)}
+            className="h-8 text-xs"
+          >
+            {(Object.keys(STATUS_LABEL) as EntertainmentStatus[]).map((s) => (
+              <option key={s} value={s}>
+                {STATUS_LABEL[s]}
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <Textarea

@@ -162,15 +162,17 @@ export function MoneyScreen() {
                         </p>
                       </div>
                       <Badge tone={STATUS_TONE[w.status]}>{w.status}</Badge>
-                      <Select
-                        value={w.status}
-                        onChange={(e) => setWishlistStatus(w.id, e.target.value as WishlistStatus)}
-                        className="h-7 w-auto text-xs"
-                      >
-                        <option value="planned">Planned</option>
-                        <option value="done">Done</option>
-                        <option value="cancelled">Cancelled</option>
-                      </Select>
+                      <div className="w-28 shrink-0">
+                        <Select
+                          value={w.status}
+                          onChange={(e) => setWishlistStatus(w.id, e.target.value as WishlistStatus)}
+                          className="h-7 text-xs"
+                        >
+                          <option value="planned">Planned</option>
+                          <option value="done">Done</option>
+                          <option value="cancelled">Cancelled</option>
+                        </Select>
+                      </div>
                       <button onClick={() => removeWishlistItem(w.id)} className="shrink-0 text-muted hover:text-red-500">
                         <Trash2 size={13} />
                       </button>

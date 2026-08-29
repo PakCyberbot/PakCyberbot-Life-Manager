@@ -75,10 +75,11 @@ export function LibraryScreen() {
             <p className="mt-1 text-sm text-muted">Books to read, videos to watch.</p>
           </div>
           {tab === 'books' && bookHosts.length > 1 && (
+            <div className="w-40 shrink-0">
             <Select
               value={hostFilter}
               onChange={(e) => setHostFilter(e.target.value)}
-              className="h-8 w-auto text-xs"
+              className="h-8 text-xs"
               title="Filter books by which machine they were added from"
             >
               <option value="all">All hosts</option>
@@ -88,6 +89,7 @@ export function LibraryScreen() {
                 </option>
               ))}
             </Select>
+            </div>
           )}
         </div>
         <Button onClick={() => (tab === 'books' ? setBookDialogOpen(true) : setVideoDialogOpen(true))}>

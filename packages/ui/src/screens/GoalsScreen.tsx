@@ -239,7 +239,7 @@ function GoalDetailDialog({
   };
 
   return (
-    <Dialog open onClose={onClose} title={goal.title}>
+    <Dialog open onClose={onClose} title={goal.title} className="max-w-xl">
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Status">
@@ -312,15 +312,17 @@ function GoalDetailDialog({
                   (t.linkType === 'file' || t.linkType === 'folder') && t.linkHostname && t.linkHostname !== hostname;
                 return (
                   <div key={t.id} className="flex items-center gap-2.5 rounded-lg bg-background px-3 py-2.5 text-sm">
-                    <Select
-                      value={t.status}
-                      onChange={(e) => setStatus(t.id, e.target.value as Task['status'])}
-                      className="h-7 w-auto shrink-0 text-xs"
-                    >
-                      <option value="todo">To do</option>
-                      <option value="in-progress">In progress</option>
-                      <option value="done">Done</option>
-                    </Select>
+                    <div className="w-28 shrink-0">
+                      <Select
+                        value={t.status}
+                        onChange={(e) => setStatus(t.id, e.target.value as Task['status'])}
+                        className="h-7 text-xs"
+                      >
+                        <option value="todo">To do</option>
+                        <option value="in-progress">In progress</option>
+                        <option value="done">Done</option>
+                      </Select>
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className={clsx('truncate font-medium', t.status === 'done' && 'text-muted line-through')}>{t.title}</p>
                       <p className="truncate text-xs text-muted">
