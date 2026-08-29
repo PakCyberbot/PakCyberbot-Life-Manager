@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Wallet } from 'lucide-react';
-import { computeAccountBalance, useMoneyStore } from '@life-manager/core';
+import { computeAccountBalance, useMoneyStore, useSettingsStore } from '@life-manager/core';
 import { formatCurrency, formatDate, isSameMonth, type AccountType, type TransactionType } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -25,13 +25,16 @@ export function MoneyScreen() {
     loaded,
   } = useMoneyStore();
 
+  const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
+
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [txnDialogOpen, setTxnDialogOpen] = useState(false);
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loaded) fetchAll();
-  }, [loaded, fetchAll]);
+    if (!settingsLoaded) loadSettings();
+  }, [loaded, fetchAll, settingsLoaded, loadSettings]);
 
   const today = new Date();
   const netWorth = useMemo(
@@ -70,15 +73,15 @@ export function MoneyScreen() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card className="p-5">
           <p className="text-xs text-muted">Net worth</p>
-          <p className="mt-1 text-2xl font-semibold">{formatCurrency(netWorth)}</p>
+          <p className="mt-1 text-2xl font-semibold">{formatCurrency(netWorth, defaultCurrency)}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs text-muted">Income this month</p>
-          <p className="mt-1 text-2xl font-semibold text-emerald-500">{formatCurrency(income)}</p>
+          <p className="mt-1 text-2xl font-semibold text-emerald-500">{formatCurrency(income, defaultCurrency)}</p>
         </Card>
         <Card className="p-5">
           <p className="text-xs text-muted">Expenses this month</p>
-          <p className="mt-1 text-2xl font-semibold text-red-500">{formatCurrency(expense)}</p>
+          <p className="mt-1 text-2xl font-semibold text-red-500">{formatCurrency(expense, defaultCurrency)}</p>
         </Card>
       </div>
 
@@ -156,7 +159,7 @@ export function MoneyScreen() {
                     <div className="mb-1.5 flex items-center justify-between text-sm">
                       <span className="font-medium">{b.category}</span>
                       <span className="text-muted">
-                        {formatCurrency(spent)} / {formatCurrency(b.monthlyLimit)}
+                        {formatCurrency(spent, defaultCurrency)} / {formatCurrency(b.monthlyLimit, defaultCurrency)}
                       </span>
                     </div>
                     <ProgressBar value={pct} toneClassName={pct >= 100 ? 'bg-red-500' : 'bg-accentMoney'} />
@@ -189,10 +192,13 @@ function AccountDialog({
   onClose: () => void;
   onCreate: ReturnType<typeof useMoneyStore.getState>['addAccount'];
 }) {
+  const defaultCurrency = useSettingsStore((s) => s.currency);
   const [name, setName] = useState('');
   const [type, setType] = useState<AccountType>('cash');
-  const [currency, setCurrency] = useState('USD');
+  const [currency, setCurrency] = useState(defaultCurrency);
   const [startingBalance, setStartingBalance] = useState('0');
+
+  useEffect(() => setCurrency(defaultCurrency), [defaultCurrency]);
 
   const submit = async () => {
     if (!name.trim()) return;

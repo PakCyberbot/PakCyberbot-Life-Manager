@@ -6,6 +6,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createElectronDataStore, type ElectronDataStore } from '@life-manager/db';
 import { createDriveSync } from './driveSync';
+import { fetchNewsForCategory } from './ai/news';
+import { generateEntertainmentVerdict } from './ai/entertainment';
+import type { AiProviderId } from './ai/providers';
 
 // Without this, Electron derives the app name from package.json's "main"
 // field ("@life-manager/desktop"), which puts userData in a messy nested
@@ -182,6 +185,38 @@ async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | nul
   }
 }
 
+interface NewsCategoryRow {
+  id: string;
+  type: string;
+  name: string;
+  prompt: string | null;
+  locationValue: string | null;
+}
+
+/** Maps a category to (Google News RSS search query, AI relevance framing). */
+function buildNewsQuery(category: NewsCategoryRow): { query: string; framing: string } | { error: string } {
+  switch (category.type) {
+    case 'custom':
+      return { query: category.name, framing: category.prompt ?? category.name };
+    case 'global-politics':
+      return {
+        query: 'global politics international relations',
+        framing: category.prompt ?? 'Major global political and policy developments that matter to everyone.',
+      };
+    case 'country':
+      if (!category.locationValue) return { error: 'Set a country for this category in Settings first.' };
+      return { query: `${category.locationValue} news`, framing: `Most important recent news in ${category.locationValue}.` };
+    case 'city':
+      if (!category.locationValue) return { error: 'Set a city for this category in Settings first.' };
+      return {
+        query: `${category.locationValue} news`,
+        framing: `Most important recent local news in ${category.locationValue}.`,
+      };
+    default:
+      return { error: `Unknown category type: ${category.type}` };
+  }
+}
+
 app.whenReady().then(async () => {
   const dbPath = path.join(app.getPath('userData'), 'life-manager.sqlite');
   store = await createElectronDataStore(dbPath);
@@ -231,6 +266,46 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('media:fetchYouTubeThumbnail', (_e, url: string) => fetchYouTubeThumbnail(url));
+
+  ipcMain.handle('news:fetch', async (_e, categoryId: string) => {
+    const category = store!.get<NewsCategoryRow>('newsCategories', categoryId);
+    if (!category) return { ok: false, error: 'Category not found.' };
+
+    const built = buildNewsQuery(category);
+    if ('error' in built) return { ok: false, error: built.error };
+
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    const ai = apiKey ? { provider, apiKey } : null;
+
+    const result = await fetchNewsForCategory(built.query, built.framing, ai);
+    if (result.error) return { ok: false, error: result.error };
+
+    const now = new Date().toISOString();
+    store!.replaceNewsItems(
+      categoryId,
+      result.items.map((item) => ({
+        id: crypto.randomUUID(),
+        title: item.title,
+        summary: item.summary,
+        url: item.url,
+        source: item.source,
+        publishedAt: item.publishedAt,
+      }))
+    );
+    store!.update('newsCategories', categoryId, { lastFetchedAt: now, updatedAt: now });
+
+    return { ok: true, items: store!.list('newsItems', { categoryId }) };
+  });
+
+  ipcMain.handle('entertainment:generateVerdict', async (_e, input: { title: string; type: string }) => {
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
+    const verdict = await generateEntertainmentVerdict(provider, apiKey, input.title, input.type);
+    if (!verdict) return { ok: false, error: 'Could not get a verdict — check your API key/quota and try again.' };
+    return { ok: true, verdict, provider };
+  });
 
   ipcMain.handle('drive:status', () => driveSync.status());
   ipcMain.handle('drive:connect', () => driveSync.connect());

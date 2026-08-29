@@ -119,6 +119,59 @@ export interface Quote extends BaseRow {
   author?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// News & Updates
+// ---------------------------------------------------------------------------
+
+export type NewsCategoryType = 'custom' | 'global-politics' | 'country' | 'city';
+export type AiProviderId = 'gemini' | 'openai' | 'anthropic';
+
+export interface NewsCategory extends BaseRow {
+  type: NewsCategoryType;
+  name: string;
+  /** Only meaningful for 'custom' — how the AI should judge relevance/write summaries. */
+  prompt?: string | null;
+  /** The country or city name — only meaningful for 'country'/'city'. */
+  locationValue?: string | null;
+  lastFetchedAt?: string | null;
+}
+
+export interface NewsItem extends BaseRow {
+  categoryId: ID;
+  title: string;
+  summary?: string | null;
+  url: string;
+  source?: string | null;
+  publishedAt?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Entertainment / Leisure
+// ---------------------------------------------------------------------------
+
+export type EntertainmentType = 'movie' | 'show' | 'anime' | 'game' | 'book' | 'other';
+export type EntertainmentStatus = 'considering' | 'in-progress' | 'completed' | 'dropped';
+export type EntertainmentVerdict = 'Worth It' | 'Mixed' | 'Skip';
+export type AddictivenessLevel = 'low' | 'medium' | 'high';
+
+export interface Entertainment extends BaseRow {
+  title: string;
+  type: EntertainmentType;
+  status: EntertainmentStatus;
+  /** Everything below is AI-generated shortly after creation — all nullable until it lands. */
+  verdict?: EntertainmentVerdict | null;
+  reasoning?: string | null;
+  skillsImproved?: string | null;
+  benefits?: string | null;
+  timeCostEstimate?: string | null;
+  addictiveness?: AddictivenessLevel | null;
+  mentalEffects?: string | null;
+  aiGeneratedAt?: string | null;
+  aiProvider?: string | null;
+  /** The user's own take — always available regardless of what the AI said. */
+  notes?: string | null;
+}
+
 export type VideoStatus = 'to-watch' | 'watching' | 'watched';
 export type VideoKind = 'video' | 'playlist';
 

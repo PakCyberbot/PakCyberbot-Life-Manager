@@ -8,6 +8,8 @@ import { CalendarScreen } from './screens/CalendarScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import { MoneyScreen } from './screens/MoneyScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
+import { NewsScreen } from './screens/NewsScreen';
+import { EntertainmentScreen } from './screens/EntertainmentScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 
 export function App() {
@@ -22,6 +24,8 @@ export function App() {
         {screen === 'tasks' && <TasksScreen />}
         {screen === 'money' && <MoneyScreen />}
         {screen === 'library' && <LibraryScreen />}
+        {screen === 'news' && <NewsScreen onNavigate={setScreen} />}
+        {screen === 'entertainment' && <EntertainmentScreen />}
         {screen === 'settings' && <SettingsScreen />}
       </AppShell>
     </ThemeProvider>

@@ -40,6 +40,12 @@ const api: LifeManagerApi = {
     push: () => ipcRenderer.invoke('drive:push'),
     pull: () => ipcRenderer.invoke('drive:pull'),
   },
+  news: {
+    fetch: (categoryId) => ipcRenderer.invoke('news:fetch', categoryId),
+  },
+  entertainment: {
+    generateVerdict: (title, type) => ipcRenderer.invoke('entertainment:generateVerdict', { title, type }),
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

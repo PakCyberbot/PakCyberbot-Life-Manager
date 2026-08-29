@@ -6,6 +6,7 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
+  Newspaper,
   Plus,
   Quote as QuoteIcon,
   Sparkles,
@@ -13,16 +14,21 @@ import {
   Upload,
   Wand2,
 } from 'lucide-react';
-import { getApi, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
+import { getApi, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
+import type { AiProviderId, NewsCategory } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
-import { Field, Input, Textarea } from '../components/ui/FormControls';
+import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 
 export function SettingsScreen() {
-  const { readerPath, readerType, loaded, load, setReader, autoDetectReader, clearReader } = useSettingsStore();
+  const { readerPath, readerType, currency, loaded, load, setReader, autoDetectReader, clearReader, setCurrency } =
+    useSettingsStore();
   const [detecting, setDetecting] = useState(false);
+  const [currencyDraft, setCurrencyDraft] = useState(currency);
+
+  useEffect(() => setCurrencyDraft(currency), [currency]);
 
   useEffect(() => {
     if (!loaded) load();
@@ -56,6 +62,30 @@ export function SettingsScreen() {
         <CardContent className="flex items-center justify-between">
           <p className="text-sm text-muted">Light, dark, or match your system.</p>
           <ThemeToggle />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Currency</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted">
+            Default for new accounts in Money and for Dashboard/Money's combined totals. Each account can still use
+            its own currency individually.
+          </p>
+          <div className="w-20 shrink-0">
+            <Field label="Code">
+              <Input
+                value={currencyDraft}
+                onChange={(e) => setCurrencyDraft(e.target.value.toUpperCase())}
+                onBlur={() => setCurrency(currencyDraft)}
+                placeholder="PKR"
+                maxLength={3}
+                className="text-center uppercase"
+              />
+            </Field>
+          </div>
         </CardContent>
       </Card>
 
@@ -103,21 +133,9 @@ export function SettingsScreen() {
 
       <DriveSyncCard />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Gemini AI features</CardTitle>
-          <Badge tone="warning">Coming soon</Badge>
-        </CardHeader>
-        <CardContent className="flex items-start gap-3">
-          <div className="mt-0.5 text-muted">
-            <Sparkles size={18} />
-          </div>
-          <p className="text-sm text-muted">
-            Quick-add parsing, entertainment "worth it" verdicts, earning-way guides, and framework suggestions will
-            connect to the free Gemini API tier once <span className="font-medium">packages/ai</span> ships.
-          </p>
-        </CardContent>
-      </Card>
+      <AiProvidersCard />
+
+      <NewsCategoriesCard />
 
       <p className="text-center text-xs text-muted">PakCyberbot Life Manager · v0.1.0 (desktop, local-first)</p>
     </div>
@@ -341,5 +359,198 @@ function DriveSyncCard() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AI providers
+// ---------------------------------------------------------------------------
+
+const PROVIDERS: { id: AiProviderId; label: string; keyLabel: string; keyPlaceholder: string; consoleUrl: string }[] = [
+  { id: 'gemini', label: 'Google Gemini', keyLabel: 'Gemini API key', keyPlaceholder: 'AIza…', consoleUrl: 'https://aistudio.google.com/apikey' },
+  { id: 'openai', label: 'OpenAI', keyLabel: 'OpenAI API key', keyPlaceholder: 'sk-…', consoleUrl: 'https://platform.openai.com/api-keys' },
+  { id: 'anthropic', label: 'Anthropic (Claude)', keyLabel: 'Anthropic API key', keyPlaceholder: 'sk-ant-…', consoleUrl: 'https://console.anthropic.com/settings/keys' },
+];
+
+function AiProvidersCard() {
+  const [activeProvider, setActiveProvider] = useState<AiProviderId>('gemini');
+  const [keys, setKeys] = useState<Record<AiProviderId, string>>({ gemini: '', openai: '', anthropic: '' });
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      getApi().settings.get('aiProvider'),
+      getApi().settings.get('geminiApiKey'),
+      getApi().settings.get('openaiApiKey'),
+      getApi().settings.get('anthropicApiKey'),
+    ]).then(([provider, gemini, openai, anthropic]) => {
+      setActiveProvider((provider as AiProviderId) || 'gemini');
+      setKeys({ gemini: gemini ?? '', openai: openai ?? '', anthropic: anthropic ?? '' });
+      setLoaded(true);
+    });
+  }, []);
+
+  const selectProvider = async (id: AiProviderId) => {
+    setActiveProvider(id);
+    await getApi().settings.set('aiProvider', id);
+  };
+
+  const saveKey = async (id: AiProviderId, value: string) => {
+    setKeys((k) => ({ ...k, [id]: value }));
+    await getApi().settings.set(`${id}ApiKey`, value.trim());
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>AI provider</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <Sparkles size={16} className="mt-0.5 shrink-0" />
+          Powers News & Updates ranking/summaries now; entertainment "worth it" verdicts, earning-way guides, and
+          framework suggestions will use this too as they ship. Each provider works only via its own API key — that's
+          the only officially supported way for a third-party app to use any of them (a ChatGPT Plus or Claude
+          Pro/Max subscription can't be used here; those are intentionally not API-accessible outside OpenAI's/
+          Anthropic's own apps). Keys are stored encrypted at rest.
+        </p>
+
+        <Field label="Active provider">
+          <Select value={activeProvider} onChange={(e) => selectProvider(e.target.value as AiProviderId)}>
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        <div className="space-y-3">
+          {PROVIDERS.map((p) => (
+            <div key={p.id} className="space-y-1.5 rounded-lg bg-background p-3">
+              <div className="flex items-center justify-between">
+                <Field label={p.keyLabel} className="flex-1">
+                  <Input
+                    type="password"
+                    value={keys[p.id]}
+                    onChange={(e) => saveKey(p.id, e.target.value)}
+                    placeholder={p.keyPlaceholder}
+                  />
+                </Field>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => getApi().system.openExternal(p.consoleUrl)}>
+                <ExternalLink size={12} /> Get a {p.label} key
+              </Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// News & Updates categories
+// ---------------------------------------------------------------------------
+
+function NewsCategoriesCard() {
+  const { categories, fetchCategories, addCustomCategory, updateCategory, removeCategory, loaded } = useNewsStore();
+  const [name, setName] = useState('');
+  const [prompt, setPrompt] = useState('');
+
+  useEffect(() => {
+    if (!loaded) fetchCategories();
+  }, [loaded, fetchCategories]);
+
+  const submit = async () => {
+    if (!name.trim() || !prompt.trim()) return;
+    await addCustomCategory(name.trim(), prompt.trim());
+    setName('');
+    setPrompt('');
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>News & Updates categories</CardTitle>
+        <Badge tone="calendar">{categories.length}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <Newspaper size={16} className="mt-0.5 shrink-0" />
+          Each category becomes a section on the News & Updates page. Custom categories are fully yours (name +
+          what the AI should judge as relevant); Country/City just need a location.
+        </p>
+
+        <div className="space-y-2">
+          {categories.map((c) => (
+            <CategoryRow key={c.id} category={c} onUpdate={updateCategory} onRemove={removeCategory} />
+          ))}
+        </div>
+
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-medium text-muted">Add a custom category</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. AI Research" />
+            <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="What should count as relevant?" />
+          </div>
+          <Button size="sm" onClick={submit} disabled={!name.trim() || !prompt.trim()}>
+            <Plus size={14} /> Add category
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoryRow({
+  category,
+  onUpdate,
+  onRemove,
+}: {
+  category: NewsCategory;
+  onUpdate: (id: string, patch: Partial<NewsCategory>) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(category.name);
+  const [prompt, setPrompt] = useState(category.prompt ?? '');
+  const [location, setLocation] = useState(category.locationValue ?? '');
+
+  return (
+    <div className="space-y-2 rounded-lg bg-background p-3">
+      <div className="flex items-center justify-between">
+        <Badge tone="library" className="capitalize">
+          {category.type.replace('-', ' ')}
+        </Badge>
+        {category.type === 'custom' && (
+          <button onClick={() => onRemove(category.id)} className="text-muted hover:text-red-500">
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+
+      {category.type === 'custom' ? (
+        <>
+          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => onUpdate(category.id, { name })} />
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onBlur={() => onUpdate(category.id, { prompt })}
+            placeholder="What should count as relevant?"
+          />
+        </>
+      ) : category.type === 'country' || category.type === 'city' ? (
+        <Input
+          value={location}
+          onChange={(e) => setLocation(e.target.value)}
+          onBlur={() => onUpdate(category.id, { locationValue: location })}
+          placeholder={category.type === 'country' ? 'e.g. Pakistan' : 'e.g. Karachi'}
+        />
+      ) : (
+        <p className="text-sm font-medium">{category.name}</p>
+      )}
+    </div>
   );
 }

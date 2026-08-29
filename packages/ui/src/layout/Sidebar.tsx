@@ -1,4 +1,4 @@
-import { CalendarDays, CheckSquare, LayoutDashboard, Library, Settings, Target, Wallet } from 'lucide-react';
+import { CalendarDays, CheckSquare, Clapperboard, LayoutDashboard, Library, Newspaper, Settings, Target, Wallet } from 'lucide-react';
 import clsx from 'clsx';
 import type { ScreenId } from '../navigation';
 import { ThemeToggle } from '../theme/ThemeToggle';
@@ -11,6 +11,8 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
   { id: 'tasks', label: 'Tasks', icon: CheckSquare, accent: 'text-accentTasks' },
   { id: 'money', label: 'Money', icon: Wallet, accent: 'text-accentMoney' },
   { id: 'library', label: 'Library', icon: Library, accent: 'text-accentLibrary' },
+  { id: 'news', label: 'News & Updates', icon: Newspaper, accent: 'text-accentCalendar' },
+  { id: 'entertainment', label: 'Entertainment', icon: Clapperboard, accent: 'text-accentLibrary' },
 ];
 
 export function Sidebar({ screen, onNavigate }: { screen: ScreenId; onNavigate: (s: ScreenId) => void }) {

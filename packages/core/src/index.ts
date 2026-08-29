@@ -8,3 +8,5 @@ export * from './stores/useSettingsStore';
 export * from './stores/useBooksStore';
 export * from './stores/useVideosStore';
 export * from './stores/useQuotesStore';
+export * from './stores/useNewsStore';
+export * from './stores/useEntertainmentStore';

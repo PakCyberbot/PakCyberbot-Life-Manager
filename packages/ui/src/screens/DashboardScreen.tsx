@@ -5,6 +5,7 @@ import {
   useGoalsStore,
   useMoneyStore,
   useQuotesStore,
+  useSettingsStore,
   useTasksStore,
   computeAccountBalance,
   pickRandomQuote,
@@ -29,6 +30,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const { events, fetchEvents, loaded: eventsLoaded } = useCalendarStore();
   const { accounts, transactions, fetchAll, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
+  const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
   const [quoteIndex, setQuoteIndex] = useState(0);
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
     if (!eventsLoaded) fetchEvents();
     if (!moneyLoaded) fetchAll();
     if (!quotesLoaded) fetchQuotes();
+    if (!settingsLoaded) loadSettings();
     setQuoteIndex(Math.floor(Math.random() * 1000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -142,8 +145,8 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
           icon={<Wallet size={16} />}
           accent="text-accentMoney bg-accentMoney/10"
           label="Net worth"
-          value={formatCurrency(netWorth)}
-          sub={`${netThisMonth >= 0 ? '+' : ''}${formatCurrency(netThisMonth)} this month`}
+          value={formatCurrency(netWorth, defaultCurrency)}
+          sub={`${netThisMonth >= 0 ? '+' : ''}${formatCurrency(netThisMonth, defaultCurrency)} this month`}
           onClick={() => onNavigate('money')}
         />
       </div>

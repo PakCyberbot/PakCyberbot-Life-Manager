@@ -16,6 +16,7 @@ import path from 'node:path';
 import initSqlJs, { type Database } from 'sql.js';
 import { SCHEMA_STATEMENTS } from './schema';
 import type { DataStore } from './DataStore';
+import { decryptSecret, encryptSecret, SECRET_SETTING_KEYS } from './secretCrypto';
 
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -42,12 +43,48 @@ function seedDefaultQuotes(db: Database) {
   }
 }
 
-/** The desktop store adds a plain key-value settings accessor, since the
- * `settings` table is keyed by `key` rather than `id` and doesn't fit the
- * generic list/get/create/update/remove shape the other tables use. */
+// One editable custom category (seeded with Cybersecurity, per the user's own
+// example) plus three fixed built-ins. Country/city start with no
+// locationValue set — News & Updates shows them as "set a location in
+// Settings" until configured, rather than guessing one.
+const DEFAULT_NEWS_CATEGORIES: { type: string; name: string; prompt: string | null }[] = [
+  {
+    type: 'custom',
+    name: 'Cybersecurity',
+    prompt: 'Latest news, techniques, threats, and updates in the field of cybersecurity.',
+  },
+  {
+    type: 'global-politics',
+    name: 'Global Politics',
+    prompt: 'Major global political and policy developments that matter to people everywhere, not tied to one country.',
+  },
+  { type: 'country', name: 'Country News', prompt: null },
+  { type: 'city', name: 'City News', prompt: null },
+];
+
+function seedDefaultNewsCategories(db: Database) {
+  const now = new Date().toISOString();
+  for (const cat of DEFAULT_NEWS_CATEGORIES) {
+    db.run(
+      'INSERT INTO newsCategories (id, type, name, prompt, locationValue, lastFetchedAt, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL)',
+      [crypto.randomUUID(), cat.type, cat.name, cat.prompt, now, now]
+    );
+  }
+}
+
+/** The desktop store adds a few methods beyond the generic DataStore shape:
+ * - getSetting/setSetting: `settings` is keyed by `key`, not `id`, and
+ *   transparently encrypts/decrypts anything in SECRET_SETTING_KEYS.
+ * - replaceNewsItems: `newsItems` holds only the latest fetch per category
+ *   (hard-deleted and reinserted on refresh) rather than an ever-growing
+ *   history, so it doesn't go through the soft-delete generic `remove()`. */
 export interface ElectronDataStore extends DataStore {
   getSetting(key: string): string | null;
   setSetting(key: string, value: string): void;
+  replaceNewsItems(
+    categoryId: string,
+    items: Array<{ id: string; title: string; summary: string | null; url: string; source: string | null; publishedAt: string | null }>
+  ): void;
 }
 
 export async function createElectronDataStore(dbFilePath: string): Promise<ElectronDataStore> {
@@ -64,7 +101,21 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
     fs.writeFileSync(dbFilePath, Buffer.from(db.export()));
   }
 
-  if (isFreshDb) seedDefaultQuotes(db);
+  // Per-table emptiness check rather than isFreshDb alone: a table added in
+  // a later app version (e.g. quotes/newsCategories, both added after this
+  // project's DB already existed) would otherwise never get seeded for
+  // anyone who installed before that version — isFreshDb is only true once,
+  // on a device's very first launch ever.
+  function tableIsEmpty(table: string): boolean {
+    const stmt = db.prepare(`SELECT COUNT(*) as count FROM ${table}`);
+    stmt.step();
+    const { count } = stmt.getAsObject() as { count: number };
+    stmt.free();
+    return count === 0;
+  }
+
+  if (tableIsEmpty('quotes')) seedDefaultQuotes(db);
+  if (tableIsEmpty('newsCategories')) seedDefaultNewsCategories(db);
 
   // Write the file immediately on first launch so it exists on disk right
   // away (useful for backups/discoverability), rather than only appearing
@@ -138,14 +189,28 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
 
     getSetting(key: string): string | null {
       const row = queryAll<{ value: string }>('SELECT value FROM settings WHERE key = ?', [key])[0];
-      return row?.value ?? null;
+      if (!row?.value) return row?.value ?? null;
+      return SECRET_SETTING_KEYS.has(key) ? decryptSecret(row.value) : row.value;
     },
 
     setSetting(key: string, value: string): void {
+      const stored = SECRET_SETTING_KEYS.has(key) && value ? encryptSecret(value) : value;
       db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [
         key,
-        value,
+        stored,
       ]);
+      persist();
+    },
+
+    replaceNewsItems(categoryId, items): void {
+      db.run('DELETE FROM newsItems WHERE categoryId = ?', [categoryId]);
+      const now = new Date().toISOString();
+      for (const item of items) {
+        db.run(
+          'INSERT INTO newsItems (id, categoryId, title, summary, url, source, publishedAt, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+          [item.id, categoryId, item.title, item.summary, item.url, item.source, item.publishedAt, now, now]
+        );
+      }
       persist();
     },
 

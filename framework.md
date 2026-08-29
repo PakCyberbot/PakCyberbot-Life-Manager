@@ -43,9 +43,9 @@ Rank what matters most right now — this is allowed to change over time, that's
 - What makes a course/book/certification "worth the time" — feeds the Learning & Reading and Skills modules
 - Minimum viable progress: how you avoid starting things and never finishing them
 
-## 6. Entertainment & Leisure Rules 🤖 used by AI
+## 6. Entertainment & Leisure Rules 🤖 used by AI — live as of the Entertainment module build
 
-This section directly grounds the **Entertainment module's** "worth your time" verdicts (see [structure.md](structure.md)). Be concrete — the more real examples you give, the better Gemini's judgment will match yours instead of guessing.
+This section directly grounds the **Entertainment module's** "worth your time" verdicts (see [structure.md](structure.md)) — not aspirationally anymore, it's actually read from this file on every verdict. Be concrete — the more real examples you give below, the better the AI's judgment will match yours instead of falling back to generic assumptions. It currently reads from the placeholders below; replace them with your real answers whenever you're ready and the next verdict will reflect it.
 
 **What makes entertainment "worth it" to you?** (edit freely — starting placeholders below)
 - Builds a skill or knowledge I actually want *(e.g. a documentary, a game with real strategic depth, a language-learning show)*
@@ -115,3 +115,4 @@ Track revisions here so the framework's evolution is visible over time — this 
 |---|---|---|
 | 2026-08-29 | Framework created | Starting point alongside structure.md, before development begins |
 | 2026-08-29 | Added §11 Suggestions to Consider Adopting (+ Gemini auto-suggestions subsection) | Give the framework a way to grow over time instead of being a one-time form |
+| 2026-08-29 | §6 went live — the Entertainment module now actually reads this section on every "worth it" verdict | Fill in real answers here (still placeholders) whenever ready; verdicts personalize immediately once you do |

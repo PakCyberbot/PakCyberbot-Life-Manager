@@ -144,4 +144,57 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // News & Updates categories. 'custom' has an editable name+prompt (e.g. the
+  // seeded "Cybersecurity" one); 'global-politics'/'country'/'city' are fixed
+  // built-ins — country/city need a locationValue set before they'll fetch.
+  `CREATE TABLE IF NOT EXISTS newsCategories (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    prompt TEXT,
+    locationValue TEXT,
+    lastFetchedAt TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  // Holds only the *latest* fetch per category (replaced wholesale on
+  // refresh, see ElectronDataStore.replaceNewsItems) — this is a live digest,
+  // not an archive, so there's no unbounded growth to worry about.
+  `CREATE TABLE IF NOT EXISTS newsItems (
+    id TEXT PRIMARY KEY,
+    categoryId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT,
+    url TEXT NOT NULL,
+    source TEXT,
+    publishedAt TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  // Entertainment / Leisure — the "worth your time" verdict fields are filled
+  // in by the AI shortly after a row is created (async, non-blocking — the
+  // card shows up immediately, verdict fields populate a moment later), and
+  // are always advisory: userNotes lets the user record their own take
+  // regardless of what the AI said.
+  `CREATE TABLE IF NOT EXISTS entertainment (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'other',
+    status TEXT NOT NULL DEFAULT 'considering',
+    verdict TEXT,
+    reasoning TEXT,
+    skillsImproved TEXT,
+    benefits TEXT,
+    timeCostEstimate TEXT,
+    addictiveness TEXT,
+    mentalEffects TEXT,
+    aiGeneratedAt TEXT,
+    aiProvider TEXT,
+    notes TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
 ];

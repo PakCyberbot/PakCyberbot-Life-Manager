@@ -101,6 +101,39 @@ export interface DriveApi {
   pull(): Promise<DriveSyncResult>;
 }
 
+export interface NewsFetchResult {
+  ok: boolean;
+  items?: unknown[];
+  error?: string;
+}
+
+/** News & Updates digest fetch — RSS-sourced links + AI ranking, see structure.md. */
+export interface NewsApi {
+  fetch(categoryId: string): Promise<NewsFetchResult>;
+}
+
+export interface EntertainmentVerdictPayload {
+  verdict: 'Worth It' | 'Mixed' | 'Skip';
+  reasoning: string;
+  skillsImproved: string;
+  benefits: string;
+  timeCostEstimate: string;
+  addictiveness: 'low' | 'medium' | 'high';
+  mentalEffects: string;
+}
+
+export interface EntertainmentVerdictResponse {
+  ok: boolean;
+  verdict?: EntertainmentVerdictPayload;
+  provider?: string;
+  error?: string;
+}
+
+/** Entertainment "worth it" verdicts, grounded in framework.md §6 — see structure.md. */
+export interface EntertainmentApi {
+  generateVerdict(title: string, type: string): Promise<EntertainmentVerdictResponse>;
+}
+
 export interface LifeManagerApi {
   db: DbApi;
   settings: SettingsApi;
@@ -108,6 +141,8 @@ export interface LifeManagerApi {
   dialog: DialogApi;
   media: MediaApi;
   drive: DriveApi;
+  news: NewsApi;
+  entertainment: EntertainmentApi;
 }
 
 declare global {

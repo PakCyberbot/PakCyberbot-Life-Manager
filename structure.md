@@ -13,8 +13,8 @@ A single cross-platform app that replaces the scattered notes-apps/spreadsheets/
 | Cross-platform approach | **Electron (desktop) + Capacitor (mobile)** | Pure JS/Node stack, one web codebase reused across both shells, biggest ecosystem/community support |
 | Data storage | **Local-first (SQLite)**, sync added later | App fully usable offline from day one; multi-device sync bolted on once core modules are proven |
 | V1 scope | **Core 4 modules**: Goals/Targets, Calendar, Tasks, Money Management | Build these deeply first; the rest arrive in v2+ once the foundation (data layer, cross-module linking, dashboard) is proven |
-| Sync backend | **Google Drive (App Data folder)** | $0 cost, no server to host, uses the user's own Drive quota, and the app data folder is hidden from the user's visible Drive so it doesn't clutter it |
-| AI provider | **Google Gemini API (free tier)** | $0 cost, good enough for the assistive features we want (parsing, categorization, suggestions); AI stays an optional enhancement, never a dependency, since free-tier rate limits mean it can't be load-bearing |
+| Sync backend | **Google Drive**, a normal named "PakCyberbot Life Manager" folder (not the hidden App Data folder originally planned) | $0 cost, no server to host, uses the user's own Drive quota; a visible folder was chosen over hidden App Data so the user can see/manage the backup file themselves |
+| AI provider | **Gemini, OpenAI, or Anthropic — user's choice, each via its own API key** (§11) | $0 baseline (works with just one free key); "log in with a ChatGPT/Claude subscription" isn't a real integration path for a third-party app and was explicitly ruled out. AI stays an optional enhancement everywhere, never a dependency — every AI feature degrades gracefully with no key configured |
 
 ## 3. Open decisions (to discuss)
 
@@ -50,8 +50,8 @@ Resolved during the v1 build (§11 has the full rationale):
 - **Skills & Earning** — skills to learn/improve, target income per skill, portfolio links
 - **Earning Ways** — track income streams (freelancing, jobs, side hustles, businesses, investments, passive income) you're doing or considering. Add your own, or ask Gemini to recommend more based on your Skills, Goals, and `framework.md` context. Opening an earning way's detail view triggers Gemini to generate a full **A–Z guide** on demand (overview → how to get started → skills/tools needed → realistic timeline → income potential → common pitfalls → resources), cached after first generation with a manual "regenerate" option. Links to Skills (what it needs) and Money (actual income earned from it, once transactions can be tagged)
 - **Habit Tracker** — daily/weekly habits, streaks, linkable to Goals
-- **Life Quotes / Reminders** — curated quote library, daily nudges
-- **Entertainment / Leisure** — track movies/shows/anime/games you're considering or in progress. Add a title → Gemini looks it up (genre, runtime/episode count/length, summary, ratings) and produces a "worth your time" verdict, grounded in your [`framework.md`](framework.md) values and current Goals/Skills (e.g. does it build a skill, is it pure rest, or is it low-value filler) — advisory only, you can always override it. Set a time budget per activity and it auto-schedules blocks onto the Calendar, defaulting to your configured leisure weeks (e.g. week 1–2 of the month, per Settings). Ships once `packages/ai` exists (see §6/§9), though the CRUD + manual scheduling can land earlier without the AI verdict.
+- ~~**Life Quotes / Reminders**~~ — built in v1, see §11
+- ~~**Entertainment / Leisure**~~ — built in v1 (§11), minus the Calendar auto-scheduling and lookup-by-title metadata (genre/runtime/ratings), which are still future work
 
 ### v3 — Depth / nice-to-haves
 - **Journal / Daily Review** — short end-of-day reflection, optionally prompted by a quote
@@ -175,21 +175,9 @@ Budget
   id, category, monthlyLimit, period
 ```
 
-### Entertainment / Leisure (v2/v3, illustrative — not built in v1)
+### Entertainment / Leisure (built in v1 — see §11 for the real schema/flow)
 
-```
-EntertainmentItem
-  id, title, type (movie|show|anime|game|other)
-  status (considering|planned|in-progress|completed|dropped)
-  metadata: { genre, releaseYear, lengthEstimate, summary, source }  # filled by Gemini lookup
-  verdict: { rating (low|medium|high), reasoning, alignedGoalIds[], alignedSkillIds[], generatedAt, modelUsed }
-  userOverride?: { rating, note }        # you always get the final say over Gemini's verdict
-  timeBudgetHours?
-  scheduledEventIds: string[]            # Calendar Events auto-created from the time budget
-  actualHoursSpent?, userSatisfaction?   # filled in after the fact, closes the feedback loop
-```
-
-Settings addition: `entertainmentWeeksOfMonth: number[]` (default `[1, 2]`) — controls which week(s) of the month the auto-scheduler prefers when placing entertainment blocks on the Calendar.
+Superseded by what actually shipped; kept here for the parts still unbuilt (Calendar auto-scheduling from a time budget, Gemini lookup of title metadata/ratings). `entertainmentWeeksOfMonth` setting remains future work alongside that.
 
 ### Earning Ways (v2/v3, illustrative — not built in v1)
 
@@ -216,15 +204,15 @@ EarningWay
 - **Settings** — theme, currency, week-start-day, notification preferences.
 - Every row on every table carries `id`, `updatedAt`, and `deletedAt` (soft delete) from v1 onward — costs nothing now, and is exactly what the Drive sync merge logic in §9 needs later, so we don't have to migrate the schema retroactively.
 
-## 9. How Google Drive sync will work (v3)
+## 9. How Google Drive sync works (built — see §11 for the actual implementation)
 
-Kept simple on purpose — this is a single-user app, so we don't need a real-time multi-user sync protocol:
+This section was written before the build; §11's "Google Drive sync" subsection describes what's actually shipped, which differs in a few ways below. Left here for the original reasoning, since most of it still holds:
 
-1. Sign in with Google (OAuth2, requested scope limited to `drive.appdata` — the app can only see its own hidden folder, never the rest of your Drive).
-2. On sync: export changed rows (`updatedAt` newer than the last sync timestamp) from each table to a JSON snapshot, upload to the App Data folder.
-3. Pull the remote snapshot, merge by `updatedAt` per row (last write wins), apply to local SQLite.
-4. Store the last-synced timestamp locally; sync runs on app start/foreground and on a timer, never blocking the UI.
-5. Conflict handling stays simple (last-write-wins) since one person is realistically editing from one device at a time — we can revisit if that assumption breaks in practice.
+1. ~~Sign in with Google (OAuth2, requested scope limited to `drive.appdata`~~ — built as `drive.file` instead, and against a normal visible "PakCyberbot Life Manager" folder rather than the hidden App Data folder, so the user can see/manage the backup themselves. Still narrow-scoped: the app can only see what it creates, nothing else in the user's Drive.
+2. ~~export changed rows... to a JSON snapshot~~ — built simpler: push/pull the whole SQLite file wholesale, not a row-level diff/merge. Sufficient for a single person realistically syncing from one device at a time (point 5 below), and avoids building a merge engine before it's needed.
+3. Pull replaces the local DB outright (after an explicit confirm — it's destructive to unsynced local changes) rather than merging.
+4. Manual Push/Pull buttons, not automatic on a timer — deliberate, so a sync never happens without the user knowing.
+5. Conflict handling stays simple (whole-file overwrite) since one person is realistically editing from one device at a time — revisit with real row-level merging if that assumption breaks in practice.
 
 ## 10. Next steps
 
@@ -240,7 +228,7 @@ Kept simple on purpose — this is a single-user app, so we don't need a real-ti
 
 The desktop app is scaffolded and running, branded as **PakCyberbot Life Manager** (window icon + sidebar mark from `logo.ico`/`logo.png` at the repo root). What exists right now:
 
-- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Tasks (3-column to-do/in-progress/done board), Calendar (month grid, click a day to view/add events), Money (accounts, transactions, budgets vs. spend), **Library** (Books & Videos, see below), Settings (theme, PDF reader config, quotes management, **Google Drive sync**, "coming soon" card for Gemini)
+- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Tasks (3-column to-do/in-progress/done board), Calendar (month grid, click a day to view/add events), Money (accounts, transactions, budgets vs. spend, per-account currency + a Settings-wide default), **Library** (Books & Videos), **News & Updates**, **Entertainment** (see below for both), Settings (theme, default currency, PDF reader config, quotes management, Google Drive sync, AI provider + keys, News categories)
 - **Theme**: light/dark/system, toggled from the sidebar or Settings, persisted per-device in `localStorage`; primary accent shifted to a green matching the new logo, plus a sixth module accent (rose) for Library
 - **Window**: opens maximized by default ("full screen" in the everyday sense — fills the screen but keeps the title bar/taskbar, unlike OS kiosk fullscreen which hides all window chrome)
 - **Data**: everything persists locally to `%APPDATA%/PakCyberbot Life Manager/life-manager.sqlite` via sql.js — closing and reopening the app keeps your data
@@ -260,6 +248,34 @@ Settings now has a real **Push to Drive** / **Pull from Drive** pair, not a plac
 - **Auth**: the standard installed-app OAuth loopback flow (RFC 8252) — a temporary `127.0.0.1` server catches Google's redirect after you approve access in your normal browser, no embedded webview. Refresh token stored in the local `settings` table.
 - **Implementation**: plain `fetch` calls against the Drive v3 REST API and Google's OAuth token endpoint (`apps/desktop/electron/driveSync.ts`) — deliberately not the `googleapis` SDK, which is tens of MB for the handful of calls this needs.
 - **What you still need to do**: paste a Google OAuth "Desktop app" Client ID + Secret into Settings once — see the setup steps in chat. Nothing here can be tested end-to-end without that; it's a genuine external dependency, not a code gap.
+
+### AI providers — API key only, by design
+
+Settings has an "AI provider" section supporting **Gemini, OpenAI, and Anthropic (Claude)**, each via its own API key (`apps/desktop/electron/ai/providers.ts`), switchable instantly. This is deliberately **not** "log in with your ChatGPT Plus / Claude Pro subscription" — that isn't a real integration path for a third-party app: OpenAI bills API usage completely separately from ChatGPT Plus by design, and Claude's subscription access is scoped to Anthropic's own apps (Claude.ai, Claude Code — which built this feature). The only way to fake subscription-login access would be scraping the web app's session, which violates both platforms' Terms of Service and risks the account — not implemented, and won't be.
+
+Model names are pinned as constants and **will** go stale — this was discovered firsthand mid-build when a live test against `gemini-2.5-flash` came back `404` with the API itself recommending `gemini-3.6-flash` as the replacement. If a provider starts failing, check the model constant first.
+
+### Encrypted settings
+
+Any settings key that holds a credential (`googleClientId`, `googleClientSecret`, `googleRefreshToken`, `geminiApiKey`, `openaiApiKey`, `anthropicApiKey`) is transparently encrypted at rest with AES-256-GCM (`packages/db/src/secretCrypto.ts`), keyed off a hardcoded app passphrase — `getSetting`/`setSetting` encrypt/decrypt automatically, so callers never see ciphertext. Honest caveat documented in the code: a hardcoded key can't stop someone with the app's own source from deriving it — there's no server-side secret to lean on in a purely local app. What it does protect against, and the actual point of it, is the far more likely case: the raw `.sqlite` file (or a cloud backup of it, or another process scanning disk) exposing API keys just by being opened in a viewer. Verified during the build by grepping the raw DB file for a real seeded key — absent in plaintext, present as `enc:iv:tag:ciphertext`.
+
+### News & Updates
+
+Real articles with guaranteed-real links, not an AI's guess at a URL. The design came out of a live finding: Gemini's "Google Search grounding" tool (the obvious way to get an LLM to cite real sources) turned out to require a billing-enabled Google Cloud project even on an otherwise free-tier key — confirmed by hitting a `429 "check your plan and billing"` specific to that tool while plain calls worked fine. So instead (`apps/desktop/electron/ai/news.ts`):
+
+1. Real articles come from **Google News RSS** (`news.google.com/rss/search?q=…`) — free, keyless, no billing, confirmed live to return same-day dated results with working links.
+2. The configured AI provider ranks/prioritizes them and writes a one-line "why it matters" per item — referenced back to the original RSS item **by list index**, not by asking the AI to reproduce a title or URL, so a real link is guaranteed even if the AI paraphrases.
+3. If no AI provider is configured, or the AI call fails for any reason, it falls back to showing the raw RSS results unranked/unsummarized rather than showing nothing.
+
+**Categories** (`newsCategories` table): one editable **custom** category (name + prompt — seeded as "Cybersecurity" per the user's own example), plus three fixed built-ins — **Global Politics** (fixed prompt), **Country** and **City** (need a location set in Settings before they'll fetch). More custom categories can be added freely. Each category's latest fetch replaces the previous one wholesale (`newsItems`, hard-deleted and reinserted via `ElectronDataStore.replaceNewsItems` — a live digest, not a growing archive) rather than going through the generic soft-delete `remove()`, so refreshing repeatedly doesn't bloat the DB. Refresh is manual (a button per category), not automatic, to stay mindful of free-tier AI quotas.
+
+### Entertainment — "worth your time" verdicts
+
+The first real use of `framework.md` as AI context, exactly as originally designed in §4's guiding principles. Add a title + type (movie/show/anime/game/book/other); the row appears immediately (`considering` status) and a verdict fills in asynchronously a moment later, same non-blocking pattern as Library's cover/thumbnail fetch. The verdict (`apps/desktop/electron/ai/entertainment.ts`) covers exactly what was asked for: a **Worth It / Mixed / Skip** call, reasoning, skills it could build, genuine benefits, a realistic time-cost estimate, an addictiveness rating, and likely mental/mood effects — all one JSON object from a single AI call.
+
+**Grounding in `framework.md`**: before prompting, the main process reads `framework.md` off disk (repo root, resolved relative to the bundled `out/main/index.js` — same relative-path pattern as the window icon) and extracts just the "§6 Entertainment & Leisure Rules" section via regex, then prepends it to the prompt as "the user's own stated criteria — judge against THIS, not generic assumptions." Falls back to a generic framing if the file can't be found (e.g. after packaging, where it wouldn't be bundled) — verdicts still generate, just without personalization. A user's own free-text notes field sits alongside the AI verdict always, regardless of what the AI said.
+
+Advisory only — every field is informational, nothing blocks adding or keeping an activity regardless of verdict, matching the "informative only, never a gatekeeper" default `framework.md` §6 recommends.
 
 ### Library — Books & Videos
 

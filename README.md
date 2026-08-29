@@ -10,11 +10,14 @@ A local-first, cross-platform personal life management app — goals, calendar, 
 - **Goals & Targets** — progress tracking, milestones
 - **Calendar** — month view, event scheduling
 - **Tasks** — a 3-column to-do board
-- **Money** — accounts, transactions, budgets vs. spend
+- **Money** — accounts, transactions, budgets vs. spend, per-account currency plus a Settings-wide default (e.g. PKR)
 - **Library** — books (linked to a local PDF, with an in-app reader that tracks your bookmark automatically) and videos (YouTube, auto-fetched thumbnail)
+- **News & Updates** — real, clickable articles from Google News RSS, ranked and summarized by your chosen AI provider. One fully custom category (seeded as Cybersecurity) plus Global Politics, Country, and City — add as many custom ones as you want
+- **Entertainment** — add a movie/show/game/anything, get an AI "worth your time" verdict (skills it builds, real benefits, time cost, addictiveness, mental effects) grounded in your own [framework.md](framework.md) criteria — always advisory, never blocking
 - **Life Quotes** — a small curated set you manage from Settings, shown at random on the Dashboard
+- **AI provider** — Gemini, OpenAI, or Anthropic, each via your own API key (no "subscription login" — see [structure.md](structure.md) for why that's not a real option for a third-party app); every credential is encrypted at rest
 - **Google Drive sync** — push/pull your data to your own Drive (needs a one-time free Google credential, see Setup below)
-- Light / dark / system theme
+- Light / dark / system theme, opens maximized by default
 
 ## Getting started
 
@@ -64,9 +67,9 @@ packages/ui/      All React screens/components — platform-agnostic
 
 ## Roadmap
 
-**v2**: Skills & Earning, Earning Ways (with AI-generated guides), Habit Tracker, Asset Management, Shopping/Wishlist, Entertainment tracking with an AI "worth it" verdict.
+**v2**: Skills & Earning, Earning Ways (with AI-generated guides), Habit Tracker, Asset Management, Shopping/Wishlist.
 
-**v3**: Journal, Contacts, Documents Vault, Net Worth charting, Subscriptions tracker, a Gemini-powered AI Assistant, and web/mobile targets via Capacitor reusing the same `packages/ui`/`packages/core`.
+**v3**: Journal, Contacts, Documents Vault, Net Worth charting, Subscriptions tracker, a broader AI Assistant (quick-add parsing, framework suggestions), and web/mobile targets via Capacitor reusing the same `packages/ui`/`packages/core`.
 
 Full detail on all of these lives in [structure.md §5](structure.md).
 
