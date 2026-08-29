@@ -166,7 +166,7 @@ export function MoneyScreen() {
                         <Select
                           value={w.status}
                           onChange={(e) => setWishlistStatus(w.id, e.target.value as WishlistStatus)}
-                          className="h-7 text-xs"
+                          className="h-7 py-1 text-xs leading-tight"
                         >
                           <option value="planned">Planned</option>
                           <option value="done">Done</option>

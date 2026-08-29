@@ -316,7 +316,7 @@ function GoalDetailDialog({
                       <Select
                         value={t.status}
                         onChange={(e) => setStatus(t.id, e.target.value as Task['status'])}
-                        className="h-7 text-xs"
+                        className="h-7 py-1 text-xs leading-tight"
                       >
                         <option value="todo">To do</option>
                         <option value="in-progress">In progress</option>

@@ -114,7 +114,7 @@ export function EarningWaysScreen() {
                   <Select
                     value={item.status}
                     onChange={(e) => updateStatus(item.id, e.target.value as EarningWayStatus)}
-                    className="h-8 text-xs"
+                    className="h-8 py-1 text-xs leading-tight"
                   >
                     {(Object.keys(STATUS_LABEL) as EarningWayStatus[]).map((s) => (
                       <option key={s} value={s}>

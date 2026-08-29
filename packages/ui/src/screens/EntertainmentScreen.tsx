@@ -163,7 +163,7 @@ function EntertainmentCard({
           <Select
             value={item.status}
             onChange={(e) => onStatusChange(e.target.value as EntertainmentStatus)}
-            className="h-8 text-xs"
+            className="h-8 py-1 text-xs leading-tight"
           >
             {(Object.keys(STATUS_LABEL) as EntertainmentStatus[]).map((s) => (
               <option key={s} value={s}>
