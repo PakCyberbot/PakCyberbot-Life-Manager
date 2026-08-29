@@ -197,6 +197,63 @@ async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | nul
   }
 }
 
+// --- Wikipedia poster/thumbnail lookup ---------------------------------------
+// For Entertainment (movies/shows/anime/games/books/other): rather than
+// asking the user to manually hunt down and paste a poster URL, or asking an
+// AI for one (the "never ask AI for a URL" lesson from News/Jobs — it can't
+// be trusted to reproduce a real image link), this queries Wikipedia's own
+// free, keyless REST API using the title (+ a type-specific hint word to
+// disambiguate, e.g. "film"/"video game") as the search term — a real search
+// against a real source, same discipline as Google News RSS elsewhere.
+
+const ENTERTAINMENT_TYPE_HINT: Record<string, string> = {
+  movie: 'film',
+  show: 'TV series',
+  anime: 'anime',
+  game: 'video game',
+  book: 'book',
+  other: '',
+};
+
+async function fetchWikipediaSummaryThumbnail(title: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { thumbnail?: { source?: string } };
+    return data.thumbnail?.source ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWikipediaThumbnail(title: string, type: string): Promise<string | null> {
+  const hint = ENTERTAINMENT_TYPE_HINT[type] ?? '';
+  const query = hint ? `${title} ${hint}` : title;
+
+  // Try the raw title first (fast path — works whenever the title itself is
+  // already the Wikipedia page's exact title, e.g. "Elden Ring").
+  let imageUrl = await fetchWikipediaSummaryThumbnail(title);
+
+  // Otherwise resolve the best-matching page via opensearch (handles
+  // disambiguation, e.g. "Inception" the word vs. "Inception (film)") using
+  // the type-hinted query, then fetch that resolved title's summary.
+  if (!imageUrl) {
+    try {
+      const searchRes = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=1&format=json`
+      );
+      if (searchRes.ok) {
+        const [, titles] = (await searchRes.json()) as [string, string[]];
+        if (titles?.[0]) imageUrl = await fetchWikipediaSummaryThumbnail(titles[0]);
+      }
+    } catch {
+      // fall through to null below
+    }
+  }
+
+  return imageUrl ? fetchImageAsDataUri(imageUrl) : null;
+}
+
 interface NewsCategoryRow {
   id: string;
   type: string;
@@ -298,6 +355,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('media:fetchYouTubeThumbnail', (_e, url: string) => fetchYouTubeThumbnail(url));
   ipcMain.handle('media:fetchImageAsDataUri', (_e, url: string) => fetchImageAsDataUri(url));
+  ipcMain.handle('media:fetchWikipediaThumbnail', (_e, title: string, type: string) => fetchWikipediaThumbnail(title, type));
 
   ipcMain.handle('news:fetch', async (_e, categoryId: string) => {
     const category = store!.get<NewsCategoryRow>('newsCategories', categoryId);

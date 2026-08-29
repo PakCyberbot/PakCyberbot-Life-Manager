@@ -30,9 +30,6 @@ export const useEntertainmentStore = create<EntertainmentState>((set, get) => ({
   },
 
   async addItem(title, type, thumbnailUrl) {
-    // Best-effort — a bad/unreachable image URL just leaves no thumbnail,
-    // never blocks adding the item itself.
-    const thumbnail = thumbnailUrl ? await getApi().media.fetchImageAsDataUri(thumbnailUrl).catch(() => null) : null;
     const item: Entertainment = {
       id: newId(),
       title,
@@ -48,7 +45,7 @@ export const useEntertainmentStore = create<EntertainmentState>((set, get) => ({
       aiGeneratedAt: null,
       aiProvider: null,
       notes: null,
-      thumbnail,
+      thumbnail: null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,
@@ -56,32 +53,54 @@ export const useEntertainmentStore = create<EntertainmentState>((set, get) => ({
     await getApi().db.create('entertainment', item);
     set({ items: [item, ...get().items] });
 
-    // Fire-and-forget: the card is already visible, verdict fields populate when ready.
+    // Fire-and-forget, both independent of each other: the card is already
+    // visible, the verdict and thumbnail each populate whenever they land.
     const pending = new Set(get().pendingVerdictIds);
     pending.add(item.id);
     set({ pendingVerdictIds: pending });
 
-    const result = await getApi().entertainment.generateVerdict(title, type);
-    const stillPending = new Set(get().pendingVerdictIds);
-    stillPending.delete(item.id);
-    set({ pendingVerdictIds: stillPending });
+    const verdictPromise = getApi()
+      .entertainment.generateVerdict(title, type)
+      .then((result) => {
+        const stillPending = new Set(get().pendingVerdictIds);
+        stillPending.delete(item.id);
+        set({ pendingVerdictIds: stillPending });
 
-    if (result.ok && result.verdict) {
-      const patch: Partial<Entertainment> = {
-        verdict: result.verdict.verdict,
-        reasoning: result.verdict.reasoning,
-        skillsImproved: result.verdict.skillsImproved,
-        benefits: result.verdict.benefits,
-        timeCostEstimate: result.verdict.timeCostEstimate,
-        addictiveness: result.verdict.addictiveness,
-        mentalEffects: result.verdict.mentalEffects,
-        aiGeneratedAt: nowIso(),
-        aiProvider: result.provider ?? null,
-      };
-      const updatedAt = nowIso();
-      await getApi().db.update('entertainment', item.id, { ...patch, updatedAt });
-      set({ items: get().items.map((i) => (i.id === item.id ? { ...i, ...patch, updatedAt } : i)) });
-    }
+        if (result.ok && result.verdict) {
+          const patch: Partial<Entertainment> = {
+            verdict: result.verdict.verdict,
+            reasoning: result.verdict.reasoning,
+            skillsImproved: result.verdict.skillsImproved,
+            benefits: result.verdict.benefits,
+            timeCostEstimate: result.verdict.timeCostEstimate,
+            addictiveness: result.verdict.addictiveness,
+            mentalEffects: result.verdict.mentalEffects,
+            aiGeneratedAt: nowIso(),
+            aiProvider: result.provider ?? null,
+          };
+          const updatedAt = nowIso();
+          return getApi()
+            .db.update('entertainment', item.id, { ...patch, updatedAt })
+            .then(() => set({ items: get().items.map((i) => (i.id === item.id ? { ...i, ...patch, updatedAt } : i)) }));
+        }
+      });
+
+    // A manually pasted URL (rare — most people won't bother) wins; otherwise
+    // looked up automatically from Wikipedia by title, so a thumbnail shows
+    // up without the user having to go find and paste one themselves.
+    const thumbnailPromise = (
+      thumbnailUrl ? getApi().media.fetchImageAsDataUri(thumbnailUrl) : getApi().media.fetchWikipediaThumbnail(title, type)
+    )
+      .catch(() => null)
+      .then((thumbnail) => {
+        if (!thumbnail) return;
+        const updatedAt = nowIso();
+        return getApi()
+          .db.update('entertainment', item.id, { thumbnail, updatedAt })
+          .then(() => set({ items: get().items.map((i) => (i.id === item.id ? { ...i, thumbnail, updatedAt } : i)) }));
+      });
+
+    await Promise.all([verdictPromise, thumbnailPromise]);
   },
 
   async updateStatus(id, status) {

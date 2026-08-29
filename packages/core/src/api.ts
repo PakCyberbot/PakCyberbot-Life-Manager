@@ -87,6 +87,8 @@ export interface MediaApi {
   fetchYouTubeThumbnail(url: string): Promise<YouTubeMeta | null>;
   /** Fetches any image URL and inlines it as a data: URI — always a URL the user pasted themselves, never AI-supplied. */
   fetchImageAsDataUri(url: string): Promise<string | null>;
+  /** Looks up a real poster/cover image from Wikipedia's own free API by title (+ type hint) — a real search, never an AI-guessed URL. */
+  fetchWikipediaThumbnail(title: string, type: string): Promise<string | null>;
 }
 
 export interface DriveSyncResult {

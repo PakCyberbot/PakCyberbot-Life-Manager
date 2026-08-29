@@ -218,11 +218,11 @@ function NewEntertainmentDialog({ open, onClose }: { open: boolean; onClose: () 
             <option value="other">Other</option>
           </Select>
         </Field>
-        <Field label="Poster/thumbnail image URL (optional)">
+        <Field label="Poster/thumbnail (optional — auto-fetched from Wikipedia if left blank)">
           <Input
             value={thumbnailUrl}
             onChange={(e) => setThumbnailUrl(e.target.value)}
-            placeholder="Paste an image link to make the card look nicer"
+            placeholder="Only needed to override the automatic one"
           />
         </Field>
         <p className="text-xs text-muted">

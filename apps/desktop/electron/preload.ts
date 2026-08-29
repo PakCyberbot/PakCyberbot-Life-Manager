@@ -36,6 +36,7 @@ const api: LifeManagerApi = {
   media: {
     fetchYouTubeThumbnail: (url) => ipcRenderer.invoke('media:fetchYouTubeThumbnail', url),
     fetchImageAsDataUri: (url) => ipcRenderer.invoke('media:fetchImageAsDataUri', url),
+    fetchWikipediaThumbnail: (title, type) => ipcRenderer.invoke('media:fetchWikipediaThumbnail', title, type),
   },
   drive: {
     status: () => ipcRenderer.invoke('drive:status'),
