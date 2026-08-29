@@ -32,6 +32,47 @@ interface AnthropicResponse {
   content?: { text?: string }[];
 }
 
+// --- Last-call error tracking -------------------------------------------------
+// callAI's public contract (string | null) is relied on by every AI feature
+// across the codebase and deliberately stays that way — changing it would
+// ripple through News/Entertainment/Earning Ways/Jobs/Food. Instead, each
+// provider function records the *reason* for a failure here on every call
+// (cleared on success), so a caller who wants to know *why* the last call
+// failed — specifically main.ts's AI status check — can ask separately
+// without every other caller needing to change. See ai/health.ts.
+
+export interface AiCallError {
+  provider: AiProviderId;
+  status: number;
+  message: string;
+  /** True if this looks like a quota/rate-limit failure rather than a bad key, network issue, etc. */
+  rateLimited: boolean;
+  at: string;
+}
+
+let lastError: AiCallError | null = null;
+
+export function getLastAiError(): AiCallError | null {
+  return lastError;
+}
+
+function looksRateLimited(status: number, bodyText: string): boolean {
+  if (status === 429) return true;
+  const lower = bodyText.toLowerCase();
+  return lower.includes('quota') || lower.includes('resource_exhausted') || lower.includes('rate limit') || lower.includes('rate_limit');
+}
+
+async function recordFailure(provider: AiProviderId, res: Response): Promise<void> {
+  const bodyText = await res.text().catch(() => '');
+  lastError = {
+    provider,
+    status: res.status,
+    message: bodyText.slice(0, 300) || res.statusText || `HTTP ${res.status}`,
+    rateLimited: looksRateLimited(res.status, bodyText),
+    at: new Date().toISOString(),
+  };
+}
+
 async function callGemini(apiKey: string, prompt: string): Promise<string | null> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
@@ -41,7 +82,11 @@ async function callGemini(apiKey: string, prompt: string): Promise<string | null
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
     }
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    await recordFailure('gemini', res);
+    return null;
+  }
+  lastError = null;
   const data = (await res.json()) as GeminiResponse;
   return data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? null;
 }
@@ -52,7 +97,11 @@ async function callOpenAI(apiKey: string, prompt: string): Promise<string | null
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model: OPENAI_MODEL, messages: [{ role: 'user', content: prompt }] }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    await recordFailure('openai', res);
+    return null;
+  }
+  lastError = null;
   const data = (await res.json()) as OpenAiResponse;
   return data.choices?.[0]?.message?.content ?? null;
 }
@@ -67,7 +116,11 @@ async function callAnthropic(apiKey: string, prompt: string): Promise<string | n
     },
     body: JSON.stringify({ model: ANTHROPIC_MODEL, max_tokens: 1024, messages: [{ role: 'user', content: prompt }] }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    await recordFailure('anthropic', res);
+    return null;
+  }
+  lastError = null;
   const data = (await res.json()) as AnthropicResponse;
   return data.content?.map((c) => c.text ?? '').join('') ?? null;
 }
@@ -85,7 +138,14 @@ export async function callAI(provider: AiProviderId, apiKey: string, prompt: str
       default:
         return null;
     }
-  } catch {
+  } catch (err) {
+    lastError = {
+      provider,
+      status: 0,
+      message: err instanceof Error ? err.message : 'Network error',
+      rateLimited: false,
+      at: new Date().toISOString(),
+    };
     return null;
   }
 }

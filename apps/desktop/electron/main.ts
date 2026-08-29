@@ -11,7 +11,8 @@ import { generateEntertainmentVerdict } from './ai/entertainment';
 import { generateEarningWayGuide, suggestEarningWays } from './ai/earningWays';
 import { fetchJobsForSearch } from './ai/jobs';
 import { generateFoodInfo } from './ai/food';
-import type { AiProviderId } from './ai/providers';
+import { getLastAiError, type AiProviderId } from './ai/providers';
+import { checkAiHealth, type AiHealthResult } from './ai/health';
 
 // Without this, Electron derives the app name from package.json's "main"
 // field ("@life-manager/desktop"), which puts userData in a messy nested
@@ -20,6 +21,46 @@ app.setName('PakCyberbot Life Manager');
 
 let store: ElectronDataStore | undefined;
 let mainWindow: BrowserWindow | undefined;
+
+// --- AI status tracking -------------------------------------------------------
+// Neither Gemini, OpenAI, nor Anthropic expose a real "remaining credits"
+// number for their free/pay-as-you-go tiers, so this tracks the closest
+// honest equivalent: whether the last known interaction with the active
+// provider succeeded, updated two ways — an explicit check (Settings'
+// "Check now") and ambiently, right after any real AI feature call, by
+// consulting providers.ts's getLastAiError() for that call. Pushed to the
+// renderer via 'ai:statusChanged' so Settings and the Sidebar warning both
+// stay in sync without polling.
+
+export interface AiStatus {
+  provider: AiProviderId;
+  ok: boolean;
+  rateLimited: boolean;
+  error?: string;
+  checkedAt: string;
+}
+
+let lastAiStatus: AiStatus | null = null;
+
+function broadcastAiStatus() {
+  mainWindow?.webContents.send('ai:statusChanged', lastAiStatus);
+}
+
+function setAiStatus(provider: AiProviderId, result: AiHealthResult) {
+  lastAiStatus = { provider, ok: result.ok, rateLimited: result.rateLimited, error: result.error, checkedAt: new Date().toISOString() };
+  broadcastAiStatus();
+}
+
+/** Call right after any real AI feature request completes, to passively keep the status fresh without a separate check call. */
+function syncAiStatusFromLastCall(provider: AiProviderId) {
+  const err = getLastAiError();
+  if (err && err.provider === provider) {
+    setAiStatus(provider, { ok: false, rateLimited: err.rateLimited, error: err.message });
+  } else if (!err && lastAiStatus?.provider === provider && !lastAiStatus.ok) {
+    // The last call for this provider succeeded — clear a previously-recorded failure.
+    setAiStatus(provider, { ok: true, rateLimited: false });
+  }
+}
 
 async function createWindow() {
   const win = new BrowserWindow({
@@ -369,6 +410,7 @@ app.whenReady().then(async () => {
     const ai = apiKey ? { provider, apiKey } : null;
 
     const result = await fetchNewsForCategory(built.query, built.framing, ai);
+    if (ai) syncAiStatusFromLastCall(ai.provider);
     if (result.error) return { ok: false, error: result.error };
 
     const now = new Date().toISOString();
@@ -394,6 +436,7 @@ app.whenReady().then(async () => {
     if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
     const customPrompt = store!.getSetting('entertainmentPrompt');
     const verdict = await generateEntertainmentVerdict(provider, apiKey, input.title, input.type, customPrompt);
+    syncAiStatusFromLastCall(provider);
     if (!verdict) return { ok: false, error: 'Could not get a verdict — check your API key/quota and try again.' };
     return { ok: true, verdict, provider };
   });
@@ -408,6 +451,7 @@ app.whenReady().then(async () => {
       apiKey,
       activeGoals.map((g) => g.title)
     );
+    syncAiStatusFromLastCall(provider);
     if (!suggestions) return { ok: false, error: 'Could not get suggestions — check your API key/quota and try again.' };
     return { ok: true, suggestions };
   });
@@ -417,6 +461,7 @@ app.whenReady().then(async () => {
     const apiKey = store!.getSetting(`${provider}ApiKey`);
     if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
     const guide = await generateEarningWayGuide(provider, apiKey, input.title, input.category);
+    syncAiStatusFromLastCall(provider);
     if (!guide) return { ok: false, error: 'Could not generate a guide — check your API key/quota and try again.' };
     return { ok: true, guide, provider };
   });
@@ -430,6 +475,7 @@ app.whenReady().then(async () => {
     const ai = apiKey ? { provider, apiKey } : null;
 
     const result = await fetchJobsForSearch(search.keywords, search.prompt ?? search.keywords, ai);
+    if (ai) syncAiStatusFromLastCall(ai.provider);
     if (result.error) return { ok: false, error: result.error };
 
     const now = new Date().toISOString();
@@ -457,8 +503,22 @@ app.whenReady().then(async () => {
     const apiKey = store!.getSetting(`${provider}ApiKey`);
     if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
     const info = await generateFoodInfo(provider, apiKey, input.name, input.quantity);
+    syncAiStatusFromLastCall(provider);
     if (!info) return { ok: false, error: 'Could not get nutrition info — check your API key/quota and try again.' };
     return { ok: true, info, provider };
+  });
+
+  ipcMain.handle('ai:getStatus', () => lastAiStatus);
+  ipcMain.handle('ai:checkStatus', async () => {
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    if (!apiKey) {
+      setAiStatus(provider, { ok: false, rateLimited: false, error: 'No API key configured for this provider.' });
+      return lastAiStatus;
+    }
+    const result = await checkAiHealth(provider, apiKey);
+    setAiStatus(provider, result);
+    return lastAiStatus;
   });
 
   ipcMain.handle('drive:status', () => driveSync.status());

@@ -65,6 +65,15 @@ const api: LifeManagerApi = {
   food: {
     generateInfo: (name, quantity) => ipcRenderer.invoke('food:generateInfo', { name, quantity }),
   },
+  ai: {
+    getStatus: () => ipcRenderer.invoke('ai:getStatus'),
+    checkStatus: () => ipcRenderer.invoke('ai:checkStatus'),
+    onStatusChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) => callback(status);
+      ipcRenderer.on('ai:statusChanged', listener);
+      return () => ipcRenderer.removeListener('ai:statusChanged', listener);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

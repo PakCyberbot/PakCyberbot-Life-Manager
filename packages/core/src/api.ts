@@ -230,6 +230,27 @@ export interface FoodApi {
   generateInfo(name: string, quantity: string): Promise<FoodInfoResponse>;
 }
 
+export interface AiStatus {
+  provider: 'gemini' | 'openai' | 'anthropic';
+  ok: boolean;
+  /** True specifically for a quota/rate-limit-shaped failure, vs. a bad key or network issue. */
+  rateLimited: boolean;
+  error?: string;
+  checkedAt: string;
+}
+
+/** Tracks whether the active AI provider is currently usable — no provider exposes a real "remaining credits"
+ * number, so this is the honest equivalent: last known success/failure, updated by an explicit check or ambiently
+ * after any real AI feature call. See structure.md. */
+export interface AiApi {
+  /** Cached last-known status, no new network call — cheap to call on mount. */
+  getStatus(): Promise<AiStatus | null>;
+  /** Makes a fresh (cheap, metadata-only) request to the active provider and updates the cached status. */
+  checkStatus(): Promise<AiStatus | null>;
+  /** Fires whenever the cached status changes (explicit check, or ambiently after any AI feature call). Returns an unsubscribe function. */
+  onStatusChanged(callback: (status: AiStatus | null) => void): () => void;
+}
+
 export interface LifeManagerApi {
   db: DbApi;
   settings: SettingsApi;
@@ -243,6 +264,7 @@ export interface LifeManagerApi {
   earningWays: EarningWaysApi;
   jobs: JobsApi;
   food: FoodApi;
+  ai: AiApi;
 }
 
 declare global {

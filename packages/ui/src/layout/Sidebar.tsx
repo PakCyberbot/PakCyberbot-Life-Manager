@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import {
+  AlertTriangle,
   Banknote,
   Briefcase,
   CalendarDays,
@@ -15,11 +16,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useSettingsStore } from '@life-manager/core';
+import { useAiStatusStore, useSettingsStore } from '@life-manager/core';
 import type { ToggleableSectionId } from '@life-manager/shared';
 import type { ScreenId } from '../navigation';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import logo from '../assets/logo.png';
+
+const PROVIDER_LABEL: Record<string, string> = { gemini: 'Gemini', openai: 'OpenAI', anthropic: 'Anthropic' };
 
 const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; accent: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, accent: 'text-primary' },
@@ -38,23 +41,40 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
 
 export function Sidebar({ screen, onNavigate }: { screen: ScreenId; onNavigate: (s: ScreenId) => void }) {
   const { enabledSections, loaded, load } = useSettingsStore();
+  const { status: aiStatus, loaded: aiStatusLoaded, load: loadAiStatus, subscribe: subscribeAiStatus } = useAiStatusStore();
 
   useEffect(() => {
     if (!loaded) load();
-  }, [loaded, load]);
+    if (!aiStatusLoaded) loadAiStatus();
+    subscribeAiStatus();
+  }, [loaded, load, aiStatusLoaded, loadAiStatus, subscribeAiStatus]);
 
   // 'dashboard' isn't a toggleable section (always on) — only check the map for ids that are.
   const navItems = NAV_ITEMS.filter((item) => enabledSections[item.id as ToggleableSectionId] !== false);
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface/60 px-3 py-4">
-      <div className="mb-6 flex items-center gap-2.5 px-2">
+      <div className="mb-3 flex items-center gap-2.5 px-2">
         <img src={logo} alt="" className="h-8 w-8 shrink-0 drop-shadow-sm" />
         <div className="min-w-0 leading-tight">
           <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted">PakCyberbot</p>
           <p className="truncate text-sm font-semibold">Life Manager</p>
         </div>
       </div>
+
+      {aiStatus && !aiStatus.ok && (
+        <button
+          onClick={() => onNavigate('settings')}
+          title={aiStatus.error}
+          className="mb-3 flex items-start gap-1.5 rounded-lg bg-red-500/10 px-2.5 py-2 text-left text-[11px] text-red-500 transition-colors hover:bg-red-500/15"
+        >
+          <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+          <span>
+            {PROVIDER_LABEL[aiStatus.provider] ?? aiStatus.provider}{' '}
+            {aiStatus.rateLimited ? 'usage limit reached' : 'unavailable'} — check Settings
+          </span>
+        </button>
+      )}
 
       <nav className="flex-1 space-y-1">
         {navItems.map(({ id, label, icon: Icon, accent }) => {

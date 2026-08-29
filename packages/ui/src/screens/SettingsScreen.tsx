@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   Banknote,
   BookOpen,
   Briefcase,
   CalendarClock,
   CalendarDays,
+  CheckCircle2,
   Clapperboard,
   Cloud,
   CloudOff,
@@ -18,6 +20,7 @@ import {
   Newspaper,
   Plus,
   Quote as QuoteIcon,
+  RefreshCw,
   Sparkles,
   Target,
   Trash2,
@@ -25,7 +28,7 @@ import {
   Wallet,
   Wand2,
 } from 'lucide-react';
-import { getApi, useJobsStore, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
+import { getApi, useAiStatusStore, useJobsStore, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
 import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
@@ -33,6 +36,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Switch } from '../components/ui/Switch';
 import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
+import clsx from 'clsx';
 
 export function SettingsScreen() {
   const { readerPath, readerType, currency, loaded, load, setReader, autoDetectReader, clearReader, setCurrency } =
@@ -460,6 +464,7 @@ function AiProvidersCard() {
   const [activeProvider, setActiveProvider] = useState<AiProviderId>('gemini');
   const [keys, setKeys] = useState<Record<AiProviderId, string>>({ gemini: '', openai: '', anthropic: '' });
   const [loaded, setLoaded] = useState(false);
+  const { status: aiStatus, checking, load: loadAiStatus, checkNow, subscribe: subscribeAiStatus } = useAiStatusStore();
 
   useEffect(() => {
     Promise.all([
@@ -472,6 +477,9 @@ function AiProvidersCard() {
       setKeys({ gemini: gemini ?? '', openai: openai ?? '', anthropic: anthropic ?? '' });
       setLoaded(true);
     });
+    loadAiStatus();
+    subscribeAiStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectProvider = async (id: AiProviderId) => {
@@ -500,6 +508,40 @@ function AiProvidersCard() {
           Pro/Max subscription can't be used here; those are intentionally not API-accessible outside OpenAI's/
           Anthropic's own apps). Keys are stored encrypted at rest.
         </p>
+
+        <div
+          className={clsx(
+            'flex items-center justify-between gap-3 rounded-lg px-3 py-2.5',
+            aiStatus?.ok ? 'bg-emerald-500/10' : aiStatus && !aiStatus.ok ? 'bg-red-500/10' : 'bg-background'
+          )}
+        >
+          <div className="flex min-w-0 items-start gap-2 text-xs">
+            {aiStatus?.ok ? (
+              <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-500" />
+            ) : aiStatus && !aiStatus.ok ? (
+              <AlertTriangle size={15} className="mt-0.5 shrink-0 text-red-500" />
+            ) : (
+              <Sparkles size={15} className="mt-0.5 shrink-0 text-muted" />
+            )}
+            <div className="min-w-0">
+              {aiStatus ? (
+                <>
+                  <p className={aiStatus.ok ? 'font-medium text-emerald-500' : 'font-medium text-red-500'}>
+                    {PROVIDERS.find((p) => p.id === aiStatus.provider)?.label ?? aiStatus.provider}
+                    {aiStatus.ok ? ' is working' : aiStatus.rateLimited ? ' — usage limit reached' : ' — unavailable'}
+                  </p>
+                  {!aiStatus.ok && aiStatus.error && <p className="mt-0.5 text-muted">{aiStatus.error}</p>}
+                  <p className="mt-0.5 text-muted">Checked {new Date(aiStatus.checkedAt).toLocaleTimeString()}</p>
+                </>
+              ) : (
+                <p className="text-muted">Not checked yet — no provider exposes a real "remaining credits" number, so this checks whether it responds right now.</p>
+              )}
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={checkNow} disabled={checking} className="shrink-0">
+            <RefreshCw size={12} className={checking ? 'animate-spin' : undefined} /> {checking ? 'Checking…' : 'Check now'}
+          </Button>
+        </div>
 
         <Field label="Active provider">
           <Select value={activeProvider} onChange={(e) => selectProvider(e.target.value as AiProviderId)}>
