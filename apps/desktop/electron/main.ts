@@ -161,10 +161,28 @@ function openBookExternally(input: { filePath: string; page: number; readerPath?
   return { ok: true, viaDefault: true };
 }
 
+// --- Image fetching -----------------------------------------------------------
+// Fetches image bytes and inlines them as a data: URI so the renderer never
+// needs a live network call (and CSP stays locked to 'self'). Shared by the
+// YouTube thumbnail lookup below and by any feature that takes a plain
+// user-pasted image URL (e.g. Entertainment posters) — the URL is always
+// something the user typed themselves, never something asked of an AI.
+
+async function fetchImageAsDataUri(imageUrl: string): Promise<string | null> {
+  try {
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) return null;
+    const buf = Buffer.from(await imgRes.arrayBuffer());
+    const contentType = imgRes.headers.get('content-type') ?? 'image/jpeg';
+    return `data:${contentType};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  }
+}
+
 // --- YouTube thumbnail lookup -----------------------------------------------
-// Uses YouTube's public oEmbed endpoint (no API key needed) and fetches the
-// thumbnail bytes too, inlining both as data: URIs so the renderer never
-// needs a live network call (and CSP stays locked to 'self').
+// Uses YouTube's public oEmbed endpoint (no API key needed) for the title,
+// then fetchImageAsDataUri for the thumbnail itself.
 
 async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | null; thumbnail: string | null } | null> {
   try {
@@ -172,16 +190,7 @@ async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | nul
     const res = await fetch(oembedUrl);
     if (!res.ok) return null;
     const data = (await res.json()) as { title?: string; thumbnail_url?: string };
-
-    let thumbnail: string | null = null;
-    if (data.thumbnail_url) {
-      const imgRes = await fetch(data.thumbnail_url);
-      if (imgRes.ok) {
-        const buf = Buffer.from(await imgRes.arrayBuffer());
-        const contentType = imgRes.headers.get('content-type') ?? 'image/jpeg';
-        thumbnail = `data:${contentType};base64,${buf.toString('base64')}`;
-      }
-    }
+    const thumbnail = data.thumbnail_url ? await fetchImageAsDataUri(data.thumbnail_url) : null;
     return { title: data.title ?? null, thumbnail };
   } catch {
     return null;
@@ -288,6 +297,7 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle('media:fetchYouTubeThumbnail', (_e, url: string) => fetchYouTubeThumbnail(url));
+  ipcMain.handle('media:fetchImageAsDataUri', (_e, url: string) => fetchImageAsDataUri(url));
 
   ipcMain.handle('news:fetch', async (_e, categoryId: string) => {
     const category = store!.get<NewsCategoryRow>('newsCategories', categoryId);

@@ -11,7 +11,7 @@ interface EntertainmentState {
 
   fetchItems: () => Promise<void>;
   /** Creates the row immediately, then fills in the AI verdict asynchronously once it lands. */
-  addItem: (title: string, type: EntertainmentType) => Promise<void>;
+  addItem: (title: string, type: EntertainmentType, thumbnailUrl?: string | null) => Promise<void>;
   updateStatus: (id: string, status: Entertainment['status']) => Promise<void>;
   updateNotes: (id: string, notes: string) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
@@ -29,7 +29,10 @@ export const useEntertainmentStore = create<EntertainmentState>((set, get) => ({
     set({ items, loading: false, loaded: true });
   },
 
-  async addItem(title, type) {
+  async addItem(title, type, thumbnailUrl) {
+    // Best-effort — a bad/unreachable image URL just leaves no thumbnail,
+    // never blocks adding the item itself.
+    const thumbnail = thumbnailUrl ? await getApi().media.fetchImageAsDataUri(thumbnailUrl).catch(() => null) : null;
     const item: Entertainment = {
       id: newId(),
       title,
@@ -45,6 +48,7 @@ export const useEntertainmentStore = create<EntertainmentState>((set, get) => ({
       aiGeneratedAt: null,
       aiProvider: null,
       notes: null,
+      thumbnail,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,

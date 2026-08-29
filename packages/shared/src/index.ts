@@ -170,6 +170,8 @@ export interface Entertainment extends BaseRow {
   aiProvider?: string | null;
   /** The user's own take — always available regardless of what the AI said. */
   notes?: string | null;
+  /** data: URI of a user-supplied poster/thumbnail image, fetched and inlined once at add time. */
+  thumbnail?: string | null;
 }
 
 // ---------------------------------------------------------------------------

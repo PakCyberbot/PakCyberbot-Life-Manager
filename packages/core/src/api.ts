@@ -85,6 +85,8 @@ export interface YouTubeMeta {
 /** Network calls that must happen in the main process (renderer CSP has no external connect-src). */
 export interface MediaApi {
   fetchYouTubeThumbnail(url: string): Promise<YouTubeMeta | null>;
+  /** Fetches any image URL and inlines it as a data: URI — always a URL the user pasted themselves, never AI-supplied. */
+  fetchImageAsDataUri(url: string): Promise<string | null>;
 }
 
 export interface DriveSyncResult {

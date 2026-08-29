@@ -193,6 +193,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     aiGeneratedAt TEXT,
     aiProvider TEXT,
     notes TEXT,
+    thumbnail TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

@@ -96,7 +96,10 @@ function EntertainmentCard({
   const [notes, setNotes] = useState(item.notes ?? '');
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <Card className="flex flex-col gap-3 overflow-hidden p-4">
+      {item.thumbnail && (
+        <img src={item.thumbnail} alt="" className="-m-4 mb-0 aspect-video w-[calc(100%+2rem)] object-cover" />
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{item.title}</p>
@@ -184,14 +187,16 @@ function NewEntertainmentDialog({ open, onClose }: { open: boolean; onClose: () 
   const { addItem } = useEntertainmentStore();
   const [title, setTitle] = useState('');
   const [type, setType] = useState<EntertainmentType>('movie');
+  const [thumbnailUrl, setThumbnailUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async () => {
     if (!title.trim()) return;
     setSubmitting(true);
-    await addItem(title.trim(), type);
+    await addItem(title.trim(), type, thumbnailUrl.trim() || null);
     setSubmitting(false);
     setTitle('');
+    setThumbnailUrl('');
     onClose();
   };
 
@@ -210,6 +215,13 @@ function NewEntertainmentDialog({ open, onClose }: { open: boolean; onClose: () 
             <option value="book">Book</option>
             <option value="other">Other</option>
           </Select>
+        </Field>
+        <Field label="Poster/thumbnail image URL (optional)">
+          <Input
+            value={thumbnailUrl}
+            onChange={(e) => setThumbnailUrl(e.target.value)}
+            placeholder="Paste an image link to make the card look nicer"
+          />
         </Field>
         <p className="text-xs text-muted">
           A verdict on whether it's worth your time — grounded in your framework.md criteria if you've set them —
