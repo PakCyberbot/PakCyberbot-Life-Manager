@@ -5,6 +5,7 @@ import {
   CalendarHeart,
   Dumbbell,
   Flame,
+  Play,
   Plus,
   Scale,
   Sparkles,
@@ -13,7 +14,7 @@ import {
   TrendingUp,
   Trash2,
 } from 'lucide-react';
-import { useHealthStore, useSettingsStore } from '@life-manager/core';
+import { getApi, useHealthStore, useSettingsStore } from '@life-manager/core';
 import { DAY_NAMES, formatCurrency, formatDate, type ExerciseCategory } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -223,9 +224,13 @@ function ExerciseTab({ onEmptyAdd }: { onEmptyAdd: () => void }) {
                 const Icon = CATEGORY_ICON[exercise.category];
                 return (
                   <div key={exercise.id} className="flex items-center gap-3 rounded-lg bg-background px-3 py-2.5">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accentHealth/10 text-accentHealth">
-                      <Icon size={15} />
-                    </span>
+                    {exercise.videoThumbnail ? (
+                      <img src={exercise.videoThumbnail} alt="" className="h-8 w-12 shrink-0 rounded-md object-cover" />
+                    ) : (
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accentHealth/10 text-accentHealth">
+                        <Icon size={15} />
+                      </span>
+                    )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{exercise.name}</p>
                       <p className="truncate text-xs capitalize text-muted">
@@ -235,6 +240,15 @@ function ExerciseTab({ onEmptyAdd }: { onEmptyAdd: () => void }) {
                         {exercise.notes ? ` · ${exercise.notes}` : ''}
                       </p>
                     </div>
+                    {exercise.videoUrl && (
+                      <button
+                        onClick={() => getApi().system.openExternal(exercise.videoUrl!)}
+                        title="Watch reference video"
+                        className="shrink-0 text-muted hover:text-accentHealth"
+                      >
+                        <Play size={14} />
+                      </button>
+                    )}
                     <button onClick={() => removeExercise(exercise.id)} className="shrink-0 text-muted hover:text-red-500">
                       <Trash2 size={13} />
                     </button>
@@ -283,6 +297,7 @@ function NewExerciseDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
   const [notes, setNotes] = useState('');
+  const [videoUrl, setVideoUrl] = useState('');
 
   const toggleDay = (d: number) => {
     const next = new Set(days);
@@ -300,6 +315,7 @@ function NewExerciseDialog({ open, onClose }: { open: boolean; onClose: () => vo
       sets: sets ? Number(sets) : null,
       reps: reps ? Number(reps) : null,
       notes: notes.trim() || null,
+      videoUrl: videoUrl.trim() || null,
     });
     setName('');
     setDays(new Set());
@@ -307,6 +323,7 @@ function NewExerciseDialog({ open, onClose }: { open: boolean; onClose: () => vo
     setSets('');
     setReps('');
     setNotes('');
+    setVideoUrl('');
     onClose();
   };
 
@@ -354,6 +371,13 @@ function NewExerciseDialog({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
         <Field label="Notes (optional)">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <Field label="Reference video (optional)">
+          <Input
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            placeholder="Paste a YouTube link to look up proper form"
+          />
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>

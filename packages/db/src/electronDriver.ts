@@ -126,6 +126,27 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
   const db: Database = isFreshDb ? new SQL.Database() : new SQL.Database(fs.readFileSync(dbFilePath));
   for (const statement of SCHEMA_STATEMENTS) db.run(statement);
 
+  // Lightweight column migration: `CREATE TABLE IF NOT EXISTS` in SCHEMA_STATEMENTS
+  // only affects fresh tables, so a column added to an *existing* table (e.g.
+  // Exercise's videoUrl, added after exercises already shipped) needs an
+  // explicit ALTER TABLE for anyone who already has that table on disk. No
+  // formal migration system exists yet — this is the ad hoc equivalent,
+  // idempotent via a PRAGMA table_info check first.
+  function ensureColumn(table: string, column: string, definition: string) {
+    const stmt = db.prepare(`PRAGMA table_info(${table})`);
+    const existing = new Set<string>();
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { name: string };
+      existing.add(row.name);
+    }
+    stmt.free();
+    if (!existing.has(column)) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+  ensureColumn('exercises', 'videoUrl', 'TEXT');
+  ensureColumn('exercises', 'videoThumbnail', 'TEXT');
+
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   function writeToDisk() {

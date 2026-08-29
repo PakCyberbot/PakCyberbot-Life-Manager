@@ -35,6 +35,7 @@ interface HealthState {
     sets?: number | null;
     reps?: number | null;
     notes?: string | null;
+    videoUrl?: string | null;
   }) => Promise<void>;
   updateExercise: (id: string, patch: Partial<Exercise>) => Promise<void>;
   removeExercise: (id: string) => Promise<void>;
@@ -78,6 +79,9 @@ export const useHealthStore = create<HealthState>((set, get) => ({
   },
 
   async addExercise(input) {
+    // Best-effort — if the lookup fails (offline, unsupported host, etc.) the
+    // exercise still gets added with the URL but no thumbnail preview.
+    const meta = input.videoUrl ? await getApi().media.fetchYouTubeThumbnail(input.videoUrl).catch(() => null) : null;
     const exercise: Exercise = {
       id: newId(),
       name: input.name,
@@ -87,6 +91,8 @@ export const useHealthStore = create<HealthState>((set, get) => ({
       sets: input.sets ?? null,
       reps: input.reps ?? null,
       notes: input.notes ?? null,
+      videoUrl: input.videoUrl ?? null,
+      videoThumbnail: meta?.thumbnail ?? null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,

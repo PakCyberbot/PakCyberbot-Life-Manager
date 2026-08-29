@@ -349,6 +349,10 @@ export interface Exercise extends BaseRow {
   sets?: number | null;
   reps?: number | null;
   notes?: string | null;
+  /** Optional reference video (e.g. a YouTube demo) to look up proper form — never required. */
+  videoUrl?: string | null;
+  /** data: URI of the fetched thumbnail, or null if unavailable/not a video with one. */
+  videoThumbnail?: string | null;
 }
 
 export interface DoctorAppointment extends BaseRow {

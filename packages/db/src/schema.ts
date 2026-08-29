@@ -319,6 +319,8 @@ export const SCHEMA_STATEMENTS: string[] = [
     sets INTEGER,
     reps INTEGER,
     notes TEXT,
+    videoUrl TEXT,
+    videoThumbnail TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
