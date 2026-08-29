@@ -1,25 +1,36 @@
 import { useEffect, useState } from 'react';
 import {
+  Banknote,
   BookOpen,
+  Briefcase,
+  CalendarDays,
+  Clapperboard,
+  CheckSquare,
   Cloud,
   CloudOff,
   Download,
   ExternalLink,
   FolderOpen,
+  FolderTree,
+  LayoutGrid,
+  Library,
   Newspaper,
   Plus,
   Quote as QuoteIcon,
   Sparkles,
+  Target,
   Trash2,
   Upload,
+  Wallet,
   Wand2,
 } from 'lucide-react';
-import { getApi, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
-import type { AiProviderId, NewsCategory } from '@life-manager/shared';
+import { getApi, useJobsStore, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
+import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { Switch } from '../components/ui/Switch';
 import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 
 export function SettingsScreen() {
@@ -89,6 +100,8 @@ export function SettingsScreen() {
         </CardContent>
       </Card>
 
+      <SectionsCard />
+
       <QuotesCard />
 
       <Card>
@@ -136,6 +149,10 @@ export function SettingsScreen() {
       <AiProvidersCard />
 
       <NewsCategoriesCard />
+
+      <JobSearchesCard />
+
+      <EntertainmentPromptCard />
 
       <p className="text-center text-xs text-muted">PakCyberbot Life Manager · v0.1.0 (desktop, local-first)</p>
     </div>
@@ -552,5 +569,208 @@ function CategoryRow({
         <p className="text-sm font-medium">{category.name}</p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Entertainment verdict criteria
+// ---------------------------------------------------------------------------
+
+function EntertainmentPromptCard() {
+  const [prompt, setPrompt] = useState('');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getApi()
+      .settings.get('entertainmentPrompt')
+      .then((value) => {
+        setPrompt(value ?? '');
+        setLoaded(true);
+      });
+  }, []);
+
+  const save = () => getApi().settings.set('entertainmentPrompt', prompt.trim());
+
+  if (!loaded) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Entertainment verdict criteria</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <Clapperboard size={16} className="mt-0.5 shrink-0" />
+          Everyone weighs "worth it" differently — write your own take here and every Entertainment verdict will
+          weigh it alongside <span className="font-medium">framework.md</span> §6 (if you've filled that in too;
+          both are used together, this is just the quicker way to adjust it without editing a file).
+        </p>
+        <Textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onBlur={save}
+          placeholder="e.g. I care most about whether something is genuinely relaxing vs. just numbing, and I don't mind pure fun as long as it's capped at a couple hours."
+          rows={4}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Job searches
+// ---------------------------------------------------------------------------
+
+function JobSearchesCard() {
+  const { searches, fetchSearches, addSearch, updateSearch, removeSearch, loaded } = useJobsStore();
+  const [label, setLabel] = useState('');
+  const [keywords, setKeywords] = useState('');
+  const [prompt, setPrompt] = useState('');
+
+  useEffect(() => {
+    if (!loaded) fetchSearches();
+  }, [loaded, fetchSearches]);
+
+  const submit = async () => {
+    if (!label.trim() || !keywords.trim()) return;
+    await addSearch(label.trim(), keywords.trim(), prompt.trim());
+    setLabel('');
+    setKeywords('');
+    setPrompt('');
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Job searches</CardTitle>
+        <Badge tone="money">{searches.length}</Badge>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <Briefcase size={16} className="mt-0.5 shrink-0" />
+          Each search becomes a section on the Jobs page. Listings come from real free job boards (RemoteOK,
+          Arbeitnow, We Work Remotely, Jobicy) — never invented — filtered by your keywords, then ranked by your AI
+          provider against the prompt below.
+        </p>
+
+        <div className="space-y-3">
+          {searches.map((s) => (
+            <JobSearchRow key={s.id} search={s} onUpdate={updateSearch} onRemove={removeSearch} />
+          ))}
+        </div>
+
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-medium text-muted">Add a search</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. Security roles" />
+            <Input value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="Keywords, comma-separated" />
+          </div>
+          <Textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="What should the AI prioritize? e.g. remote-first, senior-level, no on-call requirements"
+          />
+          <Button size="sm" onClick={submit} disabled={!label.trim() || !keywords.trim()}>
+            <Plus size={14} /> Add search
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function JobSearchRow({
+  search,
+  onUpdate,
+  onRemove,
+}: {
+  search: JobSearch;
+  onUpdate: (id: string, patch: Partial<JobSearch>) => Promise<void>;
+  onRemove: (id: string) => Promise<void>;
+}) {
+  const [label, setLabel] = useState(search.label);
+  const [keywords, setKeywords] = useState(search.keywords);
+  const [prompt, setPrompt] = useState(search.prompt ?? '');
+
+  return (
+    <div className="space-y-2 rounded-lg bg-background p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onBlur={() => onUpdate(search.id, { label })}
+          className="flex-1 font-medium"
+        />
+        <button onClick={() => onRemove(search.id)} className="shrink-0 text-muted hover:text-red-500">
+          <Trash2 size={13} />
+        </button>
+      </div>
+      <Input
+        value={keywords}
+        onChange={(e) => setKeywords(e.target.value)}
+        onBlur={() => onUpdate(search.id, { keywords })}
+        placeholder="Keywords, comma-separated"
+      />
+      <Textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onBlur={() => onUpdate(search.id, { prompt })}
+        placeholder="What should the AI prioritize?"
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sections — show/hide any module from the sidebar
+// ---------------------------------------------------------------------------
+
+const SECTION_META: Record<ToggleableSectionId, { label: string; icon: typeof Target }> = {
+  goals: { label: 'Goals', icon: Target },
+  calendar: { label: 'Calendar', icon: CalendarDays },
+  tasks: { label: 'Tasks', icon: CheckSquare },
+  money: { label: 'Money', icon: Wallet },
+  library: { label: 'Library', icon: Library },
+  news: { label: 'News & Updates', icon: Newspaper },
+  entertainment: { label: 'Entertainment', icon: Clapperboard },
+  earningWays: { label: 'Earning Ways', icon: Banknote },
+  jobs: { label: 'Jobs', icon: Briefcase },
+  fileManager: { label: 'File Manager', icon: FolderTree },
+};
+
+function SectionsCard() {
+  const { enabledSections, setSectionEnabled } = useSettingsStore();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sections</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <LayoutGrid size={16} className="mt-0.5 shrink-0" />
+          Turn any section off to hide it from the sidebar entirely — nothing gets deleted, just hidden, and you can
+          turn it back on any time. Dashboard and Settings always stay on so there's always a way back in here.
+        </p>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {TOGGLEABLE_SECTIONS.map((id) => {
+            const { label, icon: Icon } = SECTION_META[id];
+            return (
+              <div key={id} className="flex items-center justify-between gap-2 rounded-lg bg-background px-3 py-2">
+                <span className="flex items-center gap-2 text-sm">
+                  <Icon size={15} className="text-muted" />
+                  {label}
+                </span>
+                <Switch
+                  checked={enabledSections[id] !== false}
+                  onChange={(checked) => setSectionEnabled(id, checked)}
+                  label={`Toggle ${label}`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

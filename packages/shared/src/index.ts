@@ -172,6 +172,77 @@ export interface Entertainment extends BaseRow {
   notes?: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Earning Ways
+// ---------------------------------------------------------------------------
+
+export type EarningWayCategory = 'freelance' | 'job' | 'business' | 'investment' | 'passive' | 'other';
+export type EarningWayStatus = 'idea' | 'exploring' | 'active' | 'paused' | 'stopped';
+export type EarningWaySource = 'user' | 'ai';
+
+export interface EarningWay extends BaseRow {
+  title: string;
+  category: EarningWayCategory;
+  status: EarningWayStatus;
+  source: EarningWaySource;
+  notes?: string | null;
+  /** Generated on first detail-view open, cached until "Regenerate". Multi-item fields are newline-separated. */
+  guideOverview?: string | null;
+  guideSteps?: string | null;
+  guideSkillsNeeded?: string | null;
+  guideTools?: string | null;
+  guideTimeline?: string | null;
+  guideIncomePotential?: string | null;
+  guidePitfalls?: string | null;
+  guideResources?: string | null;
+  guideGeneratedAt?: string | null;
+  guideProvider?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+export interface JobSearch extends BaseRow {
+  label: string;
+  /** Comma-separated keywords, e.g. "penetration testing, security engineer". */
+  keywords: string;
+  /** How the AI should judge fit among matching listings. */
+  prompt?: string | null;
+  lastFetchedAt?: string | null;
+}
+
+export interface JobListing extends BaseRow {
+  searchId: ID;
+  title: string;
+  company?: string | null;
+  location?: string | null;
+  url: string;
+  source: string;
+  tags?: string | null;
+  aiNote?: string | null;
+  postedAt?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// File Manager (optional module — see structure.md)
+// ---------------------------------------------------------------------------
+
+export interface FileCategory extends BaseRow {
+  name: string;
+  /** null = top-level category. */
+  parentId?: ID | null;
+}
+
+export interface FileLink extends BaseRow {
+  categoryId: ID;
+  label: string;
+  path: string;
+  isFolder: number; // 0 | 1
+  /** Machine the path was added from — opening is only attempted when this matches the current machine. */
+  hostname: string;
+}
+
 export type VideoStatus = 'to-watch' | 'watching' | 'watched';
 export type VideoKind = 'video' | 'playlist';
 
@@ -220,3 +291,25 @@ export function isSameMonth(iso: string, reference: Date): boolean {
 export function startOfMonth(reference: Date): Date {
   return new Date(reference.getFullYear(), reference.getMonth(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// Toggleable sections
+// ---------------------------------------------------------------------------
+
+/** Every module screen that can be individually shown/hidden from Settings.
+ * Dashboard and Settings itself are deliberately excluded — always-on, since
+ * disabling Settings would leave no way back in to re-enable anything. */
+export const TOGGLEABLE_SECTIONS = [
+  'goals',
+  'calendar',
+  'tasks',
+  'money',
+  'library',
+  'news',
+  'entertainment',
+  'earningWays',
+  'jobs',
+  'fileManager',
+] as const;
+
+export type ToggleableSectionId = (typeof TOGGLEABLE_SECTIONS)[number];

@@ -3,9 +3,8 @@
 // that file (not a generic model opinion), when it can be found; degrades to
 // a generic framing otherwise rather than failing outright.
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { callAI, type AiProviderId } from './providers';
+import { extractFrameworkSection, readFrameworkFile } from './framework';
 
 export interface EntertainmentVerdictResult {
   verdict: 'Worth It' | 'Mixed' | 'Skip';
@@ -19,29 +18,19 @@ export interface EntertainmentVerdictResult {
 
 /** Pulls just the "Entertainment & Leisure Rules" section out of framework.md, if present. */
 function readFrameworkEntertainmentSection(): string | null {
-  // framework.md lives at the repo root. Vite bundles every local main-process
-  // module (this file included) into one flat apps/desktop/out/main/index.js,
-  // so __dirname here is the same out/main/ directory main.ts sees — same
-  // "../../resources/icon.ico"-style relative path pattern used there, just
-  // one level further up to reach the repo root instead of apps/desktop/.
-  const candidatePaths = [path.join(__dirname, '../../../framework.md'), path.join(process.cwd(), 'framework.md')];
-  for (const p of candidatePaths) {
-    try {
-      const content = fs.readFileSync(p, 'utf-8');
-      const match = content.match(/## 6\. Entertainment & Leisure Rules[\s\S]*?(?=\n## \d|\n---|\s*$)/);
-      if (match) return match[0].trim();
-    } catch {
-      // try next candidate
-    }
-  }
-  return null;
+  const content = readFrameworkFile();
+  if (!content) return null;
+  return extractFrameworkSection(content, /## 6\. Entertainment & Leisure Rules[\s\S]*?(?=\n## \d|\n---|\s*$)/);
 }
 
-function buildPrompt(title: string, type: string): string {
+function buildPrompt(title: string, type: string, customPrompt: string | null): string {
   const frameworkSection = readFrameworkEntertainmentSection();
-  const context = frameworkSection
+  let context = frameworkSection
     ? `Here is the user's own stated criteria for what makes entertainment worth their time — ground your verdict in THIS, not generic assumptions:\n\n${frameworkSection}\n\n`
     : '';
+  if (customPrompt?.trim()) {
+    context += `The user has also set this additional criteria in the app's Settings — weigh it alongside the above:\n\n${customPrompt.trim()}\n\n`;
+  }
 
   return (
     `You are helping evaluate whether spending time on "${title}" (a ${type}) is worthwhile.\n\n${context}` +
@@ -63,9 +52,10 @@ export async function generateEntertainmentVerdict(
   provider: AiProviderId,
   apiKey: string,
   title: string,
-  type: string
+  type: string,
+  customPrompt: string | null
 ): Promise<EntertainmentVerdictResult | null> {
-  const rawText = await callAI(provider, apiKey, buildPrompt(title, type));
+  const rawText = await callAI(provider, apiKey, buildPrompt(title, type, customPrompt));
   if (!rawText) return null;
 
   const match = rawText.match(/\{[\s\S]*\}/);

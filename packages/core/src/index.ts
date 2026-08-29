@@ -10,3 +10,6 @@ export * from './stores/useVideosStore';
 export * from './stores/useQuotesStore';
 export * from './stores/useNewsStore';
 export * from './stores/useEntertainmentStore';
+export * from './stores/useEarningWaysStore';
+export * from './stores/useJobsStore';
+export * from './stores/useFileManagerStore';

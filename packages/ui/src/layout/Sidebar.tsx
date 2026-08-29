@@ -1,5 +1,21 @@
-import { CalendarDays, CheckSquare, Clapperboard, LayoutDashboard, Library, Newspaper, Settings, Target, Wallet } from 'lucide-react';
+import { useEffect } from 'react';
+import {
+  Banknote,
+  Briefcase,
+  CalendarDays,
+  CheckSquare,
+  Clapperboard,
+  FolderTree,
+  LayoutDashboard,
+  Library,
+  Newspaper,
+  Settings,
+  Target,
+  Wallet,
+} from 'lucide-react';
 import clsx from 'clsx';
+import { useSettingsStore } from '@life-manager/core';
+import type { ToggleableSectionId } from '@life-manager/shared';
 import type { ScreenId } from '../navigation';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import logo from '../assets/logo.png';
@@ -13,9 +29,21 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
   { id: 'library', label: 'Library', icon: Library, accent: 'text-accentLibrary' },
   { id: 'news', label: 'News & Updates', icon: Newspaper, accent: 'text-accentCalendar' },
   { id: 'entertainment', label: 'Entertainment', icon: Clapperboard, accent: 'text-accentLibrary' },
+  { id: 'earningWays', label: 'Earning Ways', icon: Banknote, accent: 'text-accentMoney' },
+  { id: 'jobs', label: 'Jobs', icon: Briefcase, accent: 'text-accentTasks' },
+  { id: 'fileManager', label: 'File Manager', icon: FolderTree, accent: 'text-accentTasks' },
 ];
 
 export function Sidebar({ screen, onNavigate }: { screen: ScreenId; onNavigate: (s: ScreenId) => void }) {
+  const { enabledSections, loaded, load } = useSettingsStore();
+
+  useEffect(() => {
+    if (!loaded) load();
+  }, [loaded, load]);
+
+  // 'dashboard' isn't a toggleable section (always on) — only check the map for ids that are.
+  const navItems = NAV_ITEMS.filter((item) => enabledSections[item.id as ToggleableSectionId] !== false);
+
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-border bg-surface/60 px-3 py-4">
       <div className="mb-6 flex items-center gap-2.5 px-2">
@@ -27,7 +55,7 @@ export function Sidebar({ screen, onNavigate }: { screen: ScreenId; onNavigate: 
       </div>
 
       <nav className="flex-1 space-y-1">
-        {NAV_ITEMS.map(({ id, label, icon: Icon, accent }) => {
+        {navItems.map(({ id, label, icon: Icon, accent }) => {
           const active = screen === id;
           return (
             <button

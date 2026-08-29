@@ -1,10 +1,3 @@
-export type ScreenId =
-  | 'dashboard'
-  | 'goals'
-  | 'calendar'
-  | 'tasks'
-  | 'money'
-  | 'library'
-  | 'news'
-  | 'entertainment'
-  | 'settings';
+import type { ToggleableSectionId } from '@life-manager/shared';
+
+export type ScreenId = 'dashboard' | ToggleableSectionId | 'settings';

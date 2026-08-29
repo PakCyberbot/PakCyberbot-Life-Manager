@@ -57,11 +57,19 @@ export interface SystemApi {
   openExternal(url: string): Promise<void>;
   /** Fires whenever an in-app PDF viewer window closes and updates a bookmark. Returns an unsubscribe function. */
   onBookmarkUpdate(callback: (update: BookmarkUpdate) => void): () => void;
+  /** Opens a folder in the OS file browser, or a file with its default app. Only ever call this after confirming the path's hostname matches the current one. */
+  openLocalPath(path: string): Promise<{ ok: boolean; error?: string }>;
+}
+
+export interface PickedFileOrFolder {
+  path: string;
+  isFolder: boolean;
 }
 
 export interface DialogApi {
   pickPdf(): Promise<string | null>;
   pickExecutable(): Promise<string | null>;
+  pickFileOrFolder(): Promise<PickedFileOrFolder | null>;
 }
 
 export interface YouTubeMeta {
@@ -134,6 +142,53 @@ export interface EntertainmentApi {
   generateVerdict(title: string, type: string): Promise<EntertainmentVerdictResponse>;
 }
 
+export interface EarningWaySuggestionPayload {
+  title: string;
+  category: string;
+  rationale: string;
+}
+
+export interface EarningWaySuggestResponse {
+  ok: boolean;
+  suggestions?: EarningWaySuggestionPayload[];
+  error?: string;
+}
+
+export interface EarningWayGuidePayload {
+  overview: string;
+  gettingStartedSteps: string;
+  skillsNeeded: string;
+  toolsPlatforms: string;
+  timelineExpectation: string;
+  incomePotential: string;
+  commonPitfalls: string;
+  resources: string;
+}
+
+export interface EarningWayGuideResponse {
+  ok: boolean;
+  guide?: EarningWayGuidePayload;
+  provider?: string;
+  error?: string;
+}
+
+/** Earning Ways: AI-suggested income ideas + an on-demand A-Z guide per idea — see structure.md. */
+export interface EarningWaysApi {
+  suggest(): Promise<EarningWaySuggestResponse>;
+  generateGuide(title: string, category: string): Promise<EarningWayGuideResponse>;
+}
+
+export interface JobsFetchResult {
+  ok: boolean;
+  jobs?: unknown[];
+  error?: string;
+}
+
+/** Jobs: real listings from free job APIs/feeds, ranked by the configured AI provider — see structure.md. */
+export interface JobsApi {
+  fetch(searchId: string): Promise<JobsFetchResult>;
+}
+
 export interface LifeManagerApi {
   db: DbApi;
   settings: SettingsApi;
@@ -143,6 +198,8 @@ export interface LifeManagerApi {
   drive: DriveApi;
   news: NewsApi;
   entertainment: EntertainmentApi;
+  earningWays: EarningWaysApi;
+  jobs: JobsApi;
 }
 
 declare global {

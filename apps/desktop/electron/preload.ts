@@ -25,10 +25,12 @@ const api: LifeManagerApi = {
       ipcRenderer.on('book:bookmarkUpdated', listener);
       return () => ipcRenderer.removeListener('book:bookmarkUpdated', listener);
     },
+    openLocalPath: (path) => ipcRenderer.invoke('system:openLocalPath', path),
   },
   dialog: {
     pickPdf: () => ipcRenderer.invoke('dialog:pickPdf'),
     pickExecutable: () => ipcRenderer.invoke('dialog:pickExecutable'),
+    pickFileOrFolder: () => ipcRenderer.invoke('dialog:pickFileOrFolder'),
   },
   media: {
     fetchYouTubeThumbnail: (url) => ipcRenderer.invoke('media:fetchYouTubeThumbnail', url),
@@ -45,6 +47,13 @@ const api: LifeManagerApi = {
   },
   entertainment: {
     generateVerdict: (title, type) => ipcRenderer.invoke('entertainment:generateVerdict', { title, type }),
+  },
+  earningWays: {
+    suggest: () => ipcRenderer.invoke('earningWays:suggest'),
+    generateGuide: (title, category) => ipcRenderer.invoke('earningWays:generateGuide', { title, category }),
+  },
+  jobs: {
+    fetch: (searchId) => ipcRenderer.invoke('jobs:fetch', searchId),
   },
 };
 

@@ -197,4 +197,84 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // Earning Ways — the guide* fields are generated on demand the first time
+  // the detail view opens for a row (not eagerly on create, unlike
+  // Entertainment's verdict), then cached here until "Regenerate" is used.
+  // Multi-item fields (steps, pitfalls, resources) are newline-separated
+  // plain text rather than JSON, consistent with the rest of this schema.
+  `CREATE TABLE IF NOT EXISTS earningWays (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
+    status TEXT NOT NULL DEFAULT 'idea',
+    source TEXT NOT NULL DEFAULT 'user',
+    notes TEXT,
+    guideOverview TEXT,
+    guideSteps TEXT,
+    guideSkillsNeeded TEXT,
+    guideTools TEXT,
+    guideTimeline TEXT,
+    guideIncomePotential TEXT,
+    guidePitfalls TEXT,
+    guideResources TEXT,
+    guideGeneratedAt TEXT,
+    guideProvider TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  // Jobs — saved searches (keywords + an AI framing prompt for what to
+  // prioritize). jobListings holds only the latest fetch per search
+  // (hard-deleted/reinserted, same live-digest pattern as newsItems), sourced
+  // from real job APIs/feeds — never AI-generated, see ai/jobs.ts.
+  `CREATE TABLE IF NOT EXISTS jobSearches (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    keywords TEXT NOT NULL,
+    prompt TEXT,
+    lastFetchedAt TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS jobListings (
+    id TEXT PRIMARY KEY,
+    searchId TEXT NOT NULL,
+    title TEXT NOT NULL,
+    company TEXT,
+    location TEXT,
+    url TEXT NOT NULL,
+    source TEXT NOT NULL,
+    tags TEXT,
+    aiNote TEXT,
+    postedAt TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  // File Manager (optional, enabled from Settings) — a self-referencing
+  // category tree (parentId) for organizing links to real folders/files on
+  // disk. Each link records the hostname it was added from; opening one is
+  // only ever attempted when that matches the current machine — see
+  // structure.md for why (this is not a synced file store, just organized
+  // shortcuts, and a path from another machine may not exist here at all).
+  `CREATE TABLE IF NOT EXISTS fileCategories (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    parentId TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS fileLinks (
+    id TEXT PRIMARY KEY,
+    categoryId TEXT NOT NULL,
+    label TEXT NOT NULL,
+    path TEXT NOT NULL,
+    isFolder INTEGER NOT NULL DEFAULT 1,
+    hostname TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
 ];

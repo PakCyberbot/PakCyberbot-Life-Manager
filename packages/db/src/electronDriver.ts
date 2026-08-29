@@ -85,6 +85,20 @@ export interface ElectronDataStore extends DataStore {
     categoryId: string,
     items: Array<{ id: string; title: string; summary: string | null; url: string; source: string | null; publishedAt: string | null }>
   ): void;
+  replaceJobListings(
+    searchId: string,
+    items: Array<{
+      id: string;
+      title: string;
+      company: string | null;
+      location: string | null;
+      url: string;
+      source: string;
+      tags: string | null;
+      aiNote: string | null;
+      postedAt: string | null;
+    }>
+  ): void;
 }
 
 export async function createElectronDataStore(dbFilePath: string): Promise<ElectronDataStore> {
@@ -209,6 +223,18 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
         db.run(
           'INSERT INTO newsItems (id, categoryId, title, summary, url, source, publishedAt, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
           [item.id, categoryId, item.title, item.summary, item.url, item.source, item.publishedAt, now, now]
+        );
+      }
+      persist();
+    },
+
+    replaceJobListings(searchId, items): void {
+      db.run('DELETE FROM jobListings WHERE searchId = ?', [searchId]);
+      const now = new Date().toISOString();
+      for (const item of items) {
+        db.run(
+          'INSERT INTO jobListings (id, searchId, title, company, location, url, source, tags, aiNote, postedAt, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)',
+          [item.id, searchId, item.title, item.company, item.location, item.url, item.source, item.tags, item.aiNote, item.postedAt, now, now]
         );
       }
       persist();

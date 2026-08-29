@@ -48,7 +48,7 @@ Resolved during the v1 build (§11 has the full rationale):
 - **Shopping / Wishlist** — what to buy, priority, price tracking, links
 - **Library (Books & Videos)** — pulled forward and built in v1 as the "Learning & Reading" module made concrete, see §11 for the actual implementation (custom PDF paths + bookmark/reader launch for books, YouTube thumbnail fetch for videos)
 - **Skills & Earning** — skills to learn/improve, target income per skill, portfolio links
-- **Earning Ways** — track income streams (freelancing, jobs, side hustles, businesses, investments, passive income) you're doing or considering. Add your own, or ask Gemini to recommend more based on your Skills, Goals, and `framework.md` context. Opening an earning way's detail view triggers Gemini to generate a full **A–Z guide** on demand (overview → how to get started → skills/tools needed → realistic timeline → income potential → common pitfalls → resources), cached after first generation with a manual "regenerate" option. Links to Skills (what it needs) and Money (actual income earned from it, once transactions can be tagged)
+- ~~**Earning Ways**~~ — built in v1 (§11); linking to Skills once that module exists is still future work
 - **Habit Tracker** — daily/weekly habits, streaks, linkable to Goals
 - ~~**Life Quotes / Reminders**~~ — built in v1, see §11
 - ~~**Entertainment / Leisure**~~ — built in v1 (§11), minus the Calendar auto-scheduling and lookup-by-title metadata (genre/runtime/ratings), which are still future work
@@ -179,23 +179,9 @@ Budget
 
 Superseded by what actually shipped; kept here for the parts still unbuilt (Calendar auto-scheduling from a time budget, Gemini lookup of title metadata/ratings). `entertainmentWeeksOfMonth` setting remains future work alongside that.
 
-### Earning Ways (v2/v3, illustrative — not built in v1)
+### Earning Ways (built in v1 — see §11 for the real schema/flow)
 
-```
-EarningWay
-  id, title, category (freelance|job|business|investment|passive|other)
-  status (idea|exploring|active|paused|stopped)
-  source (userAdded|geminiRecommended)
-  linkedSkillIds[]                       # what skills it needs/grows
-  guide?: {                              # generated on first popup open, cached after
-    overview, gettingStartedSteps[], skillsNeeded[], toolsPlatforms[],
-    timelineExpectation, incomePotential, commonPitfalls[], resources[],
-    generatedAt, modelUsed
-  }
-  notes
-  # actual earnings tracked via the generic `links` table against Money's Transaction rows,
-  # not a duplicate field here — avoids the numbers drifting out of sync
-```
+Superseded by what actually shipped. `linkedSkillIds` and tying actual earnings back to Money's transactions remain future work — both depend on modules/UI that don't exist yet (Skills, and a way to tag a Transaction to an EarningWay).
 
 ### Cross-cutting systems (built once, used everywhere)
 - **Linking/Tags** — a generic `links` table (`entityType`, `entityId`, `linkedType`, `linkedId`) so any module can reference any other without schema changes each time we add a module.
@@ -228,7 +214,7 @@ This section was written before the build; §11's "Google Drive sync" subsection
 
 The desktop app is scaffolded and running, branded as **PakCyberbot Life Manager** (window icon + sidebar mark from `logo.ico`/`logo.png` at the repo root). What exists right now:
 
-- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Tasks (3-column to-do/in-progress/done board), Calendar (month grid, click a day to view/add events), Money (accounts, transactions, budgets vs. spend, per-account currency + a Settings-wide default), **Library** (Books & Videos), **News & Updates**, **Entertainment** (see below for both), Settings (theme, default currency, PDF reader config, quotes management, Google Drive sync, AI provider + keys, News categories)
+- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Tasks (3-column to-do/in-progress/done board), Calendar (month grid, click a day to view/add events), Money (accounts, transactions, budgets vs. spend, per-account currency + a Settings-wide default), **Library** (Books & Videos), **News & Updates**, **Entertainment**, **Earning Ways**, **Jobs**, **File Manager** (see below for all five), Settings (theme, default currency, PDF reader config, quotes management, Google Drive sync, AI provider + keys, News categories, Entertainment criteria, Job searches, **per-module Sections toggles**)
 - **Theme**: light/dark/system, toggled from the sidebar or Settings, persisted per-device in `localStorage`; primary accent shifted to a green matching the new logo, plus a sixth module accent (rose) for Library
 - **Window**: opens maximized by default ("full screen" in the everyday sense — fills the screen but keeps the title bar/taskbar, unlike OS kiosk fullscreen which hides all window chrome)
 - **Data**: everything persists locally to `%APPDATA%/PakCyberbot Life Manager/life-manager.sqlite` via sql.js — closing and reopening the app keeps your data
@@ -273,9 +259,48 @@ Real articles with guaranteed-real links, not an AI's guess at a URL. The design
 
 The first real use of `framework.md` as AI context, exactly as originally designed in §4's guiding principles. Add a title + type (movie/show/anime/game/book/other); the row appears immediately (`considering` status) and a verdict fills in asynchronously a moment later, same non-blocking pattern as Library's cover/thumbnail fetch. The verdict (`apps/desktop/electron/ai/entertainment.ts`) covers exactly what was asked for: a **Worth It / Mixed / Skip** call, reasoning, skills it could build, genuine benefits, a realistic time-cost estimate, an addictiveness rating, and likely mental/mood effects — all one JSON object from a single AI call.
 
-**Grounding in `framework.md`**: before prompting, the main process reads `framework.md` off disk (repo root, resolved relative to the bundled `out/main/index.js` — same relative-path pattern as the window icon) and extracts just the "§6 Entertainment & Leisure Rules" section via regex, then prepends it to the prompt as "the user's own stated criteria — judge against THIS, not generic assumptions." Falls back to a generic framing if the file can't be found (e.g. after packaging, where it wouldn't be bundled) — verdicts still generate, just without personalization. A user's own free-text notes field sits alongside the AI verdict always, regardless of what the AI said.
+**Grounding in `framework.md`**: before prompting, the main process reads `framework.md` off disk (repo root, resolved relative to the bundled `out/main/index.js` — same relative-path pattern as the window icon, via the shared `apps/desktop/electron/ai/framework.ts` helper) and extracts just the "§6 Entertainment & Leisure Rules" section via regex, then prepends it to the prompt as "the user's own stated criteria — judge against THIS, not generic assumptions." Falls back to a generic framing if the file can't be found (e.g. after packaging, where it wouldn't be bundled) — verdicts still generate, just without personalization.
+
+**Settings-editable criteria too**: since editing a markdown file isn't the most discoverable way to steer this, Settings also has a plain "Entertainment verdict criteria" textarea (`entertainmentPrompt` setting) that layers on top of `framework.md` §6 in the same prompt — either can be used alone, or both together. A user's own free-text notes field sits alongside the AI verdict always, regardless of what either source said.
 
 Advisory only — every field is informational, nothing blocks adding or keeping an activity regardless of verdict, matching the "informative only, never a gatekeeper" default `framework.md` §6 recommends.
+
+### Earning Ways — ideas + on-demand A-Z guides
+
+Manual ideas (title + category + notes) plus AI suggestions, both landing in the same list. "Get AI suggestions" (`apps/desktop/electron/ai/earningWays.ts`) reads active Goal titles and `framework.md` §1 (Core Values) + §5 (Skill & Learning Framework) as context, returns up to 6 ideas with a one-line rationale each; the user picks which to actually add (never auto-added) via a checkmark/dismiss row, keeping the list opt-in rather than auto-populated.
+
+Opening an earning way's detail dialog ("popup") generates the full guide on first open if not already cached — overview, getting-started steps, skills needed, tools/platforms, a timeline, income potential, common pitfalls, and resources — one JSON object from a single AI call, with a manual "Regenerate" option after that. Same discipline as News & Updates: **resources are requested as names, never URLs** — the AI is never asked to produce a link, so there's nothing to hallucinate.
+
+### Jobs — real listings, aggregated, never scraped from sites that forbid it
+
+Same News & Updates pattern applied to job search: real listings from free sources + AI ranking, never AI-invented listings or links. Deliberately does **not** scrape LinkedIn, Indeed, or Glassdoor — their Terms of Service explicitly prohibit it and they actively fight scrapers (LinkedIn has literally sued over this — *hiQ Labs v. LinkedIn*). Instead, `apps/desktop/electron/ai/jobs.ts` aggregates four sources built for exactly this kind of use, all free and keyless:
+
+- **RemoteOK** (`remoteok.com/api`) — asks only for attribution in its terms
+- **Arbeitnow** (`arbeitnow.com/api/job-board-api`) — supports server-side `?search=`
+- **We Work Remotely** (`weworkremotely.com/remote-jobs.rss`) — a public RSS feed, meant for syndication
+- **Jobicy** (`jobicy.com/api/v2/remote-jobs`) — asks for attribution + that application links stay as the original job URL (honored: job cards always open the exact URL the source provided)
+
+All four are queried in parallel (`Promise.allSettled` — one source failing doesn't sink the others), normalized to a common shape, deduped by URL, sorted by recency, capped at 40 candidates. If an AI provider is configured, it ranks up to 10 against the search's prompt and writes a one-line fit note per pick — same index-based reference pattern as News, so a real link is guaranteed regardless of how the AI paraphrases a title. Without a provider (or if the AI call fails), it falls back to the top 15 raw results unranked rather than showing nothing.
+
+**Settings-driven, per the user's ask**: "job searches" (`jobSearches` table — label, comma-separated keywords, an AI framing prompt for what to prioritize) are managed entirely from Settings, mirroring News categories exactly. The Jobs screen itself only displays saved searches + a Refresh button per section — no criteria live outside Settings, so "which types of jobs to list" always has one place to edit. Not seeded with a default search (job criteria is too personal to guess, unlike Quotes).
+
+### Sections — show/hide any module from Settings
+
+A single Settings card lists every toggleable module (`packages/shared`'s `TOGGLEABLE_SECTIONS` — Goals, Calendar, Tasks, Money, Library, News, Entertainment, Earning Ways, Jobs, File Manager) with a switch each. Turning one off hides it from the sidebar entirely — not a disabled/greyed-out state, just gone, same as if that module didn't exist for you — and turning it back on brings it right back with all its data intact (nothing is deleted, only hidden). Dashboard and Settings are deliberately excluded from the list and can't be turned off, since disabling Settings would remove the only way back in to re-enable anything.
+
+Stored as a single `disabledSections` setting (comma-separated list of the ones turned *off* — everything not listed defaults to on), so adding a new toggleable module later is one line in `TOGGLEABLE_SECTIONS` plus a `SECTION_META` entry for its label/icon in Settings, not a new settings key each time. If the section currently being viewed gets toggled off, `App.tsx` bounces back to Dashboard rather than leaving the user stranded on a screen no longer reachable from the sidebar.
+
+### File Manager — hostname-gated folder/file links
+
+Started as the one module that's off by default, then generalized into a proper **Sections** toggle in Settings (§11) — every module (this one included) can now be individually shown/hidden from the sidebar, not just File Manager. All default to on; toggle any off and it disappears from the sidebar entirely, not just its data — nothing is deleted, and re-enabling brings it right back.
+
+**What it is**: a self-referencing category tree (`fileCategories.parentId`) the user builds themselves — e.g. Cybersecurity → Tools, Cybersecurity → Testing — with real folder/file paths (`fileLinks`) attached at any level. It's explicitly *not* a synced file store or a real file browser (no listing/previewing what's inside a linked folder) — just organized shortcuts to open things that already exist on disk, browsed the same way as any category-based screen in this app (breadcrumb + grid, "New category" / "Add link").
+
+**Hostname gating, exactly as specified**: every link records the hostname it was added from (same `os.hostname()` pattern as Library's books). Viewing a category shows every link regardless of which machine added it — useful once Drive sync brings the category structure to another device — but clicking one is a genuine no-op unless its hostname matches the current machine's; `useFileManagerStore.openLink()` doesn't even call out to the main process on a mismatch, so there's no risk of it trying (and failing loudly) to open a path that was never valid on this device. The card shows "on `<hostname>`" instead of an open affordance in that case.
+
+**Adding a link**: `dialog:pickFileOrFolder` opens one native dialog offering both `openFile` and `openDirectory` (Windows/Linux; macOS falls back to file-only, a platform limitation of its picker, not this app's choice), then `fs.statSync` in the main process determines folder-vs-file once at add time so the renderer never needs to guess. Opening later goes through `system:openLocalPath`, which wraps `shell.openPath` — the same call handles both a folder (opens it in Explorer) and a file (opens it with its default app), so no branching is needed there either.
+
+**Deleting a category cascades**: removing a category also soft-deletes every descendant category and every link inside any of them (`collectDescendantIds`, a plain breadth-first walk over `parentId` — unit-tested against a 4-level nested tree during the build) rather than either blocking the delete or silently orphaning children.
 
 ### Library — Books & Videos
 

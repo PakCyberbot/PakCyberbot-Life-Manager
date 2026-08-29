@@ -8,6 +8,8 @@ import { createElectronDataStore, type ElectronDataStore } from '@life-manager/d
 import { createDriveSync } from './driveSync';
 import { fetchNewsForCategory } from './ai/news';
 import { generateEntertainmentVerdict } from './ai/entertainment';
+import { generateEarningWayGuide, suggestEarningWays } from './ai/earningWays';
+import { fetchJobsForSearch } from './ai/jobs';
 import type { AiProviderId } from './ai/providers';
 
 // Without this, Electron derives the app name from package.json's "main"
@@ -245,6 +247,14 @@ app.whenReady().then(async () => {
   ipcMain.handle('system:openBookInApp', (_e, input) => openBookInAppWindow(input));
   ipcMain.handle('system:openBookExternally', (_e, input) => openBookExternally(input));
   ipcMain.handle('system:openExternal', (_e, url: string) => shell.openExternal(url));
+  ipcMain.handle('system:openLocalPath', async (_e, targetPath: string) => {
+    if (!fs.existsSync(targetPath)) return { ok: false, error: 'This path does not exist on this machine.' };
+    // shell.openPath opens a folder in the OS file browser or a file with its
+    // default app, either way — no need to branch on file vs. folder here.
+    // It resolves to '' on success, or an error string on failure.
+    const errorMessage = await shell.openPath(targetPath);
+    return errorMessage ? { ok: false, error: errorMessage } : { ok: true };
+  });
 
   ipcMain.handle('dialog:pickPdf', async () => {
     const win = BrowserWindow.getFocusedWindow();
@@ -263,6 +273,16 @@ app.whenReady().then(async () => {
     };
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
+  });
+  ipcMain.handle('dialog:pickFileOrFolder', async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    // Windows/Linux allow combining these in one dialog with a toggle; only
+    // macOS can't, where this falls back to file-picking only.
+    const options: Electron.OpenDialogOptions = { properties: ['openFile', 'openDirectory'] };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const picked = result.filePaths[0];
+    return { path: picked, isFolder: fs.statSync(picked).isDirectory() };
   });
 
   ipcMain.handle('media:fetchYouTubeThumbnail', (_e, url: string) => fetchYouTubeThumbnail(url));
@@ -302,9 +322,64 @@ app.whenReady().then(async () => {
     const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
     const apiKey = store!.getSetting(`${provider}ApiKey`);
     if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
-    const verdict = await generateEntertainmentVerdict(provider, apiKey, input.title, input.type);
+    const customPrompt = store!.getSetting('entertainmentPrompt');
+    const verdict = await generateEntertainmentVerdict(provider, apiKey, input.title, input.type, customPrompt);
     if (!verdict) return { ok: false, error: 'Could not get a verdict — check your API key/quota and try again.' };
     return { ok: true, verdict, provider };
+  });
+
+  ipcMain.handle('earningWays:suggest', async () => {
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
+    const activeGoals = store!.list<{ title: string; status: string }>('goals', { status: 'active' });
+    const suggestions = await suggestEarningWays(
+      provider,
+      apiKey,
+      activeGoals.map((g) => g.title)
+    );
+    if (!suggestions) return { ok: false, error: 'Could not get suggestions — check your API key/quota and try again.' };
+    return { ok: true, suggestions };
+  });
+
+  ipcMain.handle('earningWays:generateGuide', async (_e, input: { title: string; category: string }) => {
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
+    const guide = await generateEarningWayGuide(provider, apiKey, input.title, input.category);
+    if (!guide) return { ok: false, error: 'Could not generate a guide — check your API key/quota and try again.' };
+    return { ok: true, guide, provider };
+  });
+
+  ipcMain.handle('jobs:fetch', async (_e, searchId: string) => {
+    const search = store!.get<{ id: string; keywords: string; prompt: string | null }>('jobSearches', searchId);
+    if (!search) return { ok: false, error: 'Search not found.' };
+
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    const ai = apiKey ? { provider, apiKey } : null;
+
+    const result = await fetchJobsForSearch(search.keywords, search.prompt ?? search.keywords, ai);
+    if (result.error) return { ok: false, error: result.error };
+
+    const now = new Date().toISOString();
+    store!.replaceJobListings(
+      searchId,
+      result.jobs.map((job) => ({
+        id: crypto.randomUUID(),
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        url: job.url,
+        source: job.source,
+        tags: job.tags.join(', ') || null,
+        aiNote: job.aiNote,
+        postedAt: job.postedAt,
+      }))
+    );
+    store!.update('jobSearches', searchId, { lastFetchedAt: now, updatedAt: now });
+
+    return { ok: true, jobs: store!.list('jobListings', { searchId }) };
   });
 
   ipcMain.handle('drive:status', () => driveSync.status());
