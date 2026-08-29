@@ -273,6 +273,16 @@ Settings has an "AI provider" section supporting **Gemini, OpenAI, and Anthropic
 
 Model names are pinned as constants and **will** go stale — this was discovered firsthand mid-build when a live test against `gemini-2.5-flash` came back `404` with the API itself recommending `gemini-3.6-flash` as the replacement. If a provider starts failing, check the model constant first.
 
+### AI provider status — "is it working right now," not "how many credits are left"
+
+None of the three providers expose a real remaining-credits/quota number for their free or pay-as-you-go tiers, so a literal "credits check" isn't something that can be built honestly. What's built instead: a cheap, metadata-only request (`GET /models` — list available models, not a real generation call, so checking status doesn't itself burn quota) that succeeds or fails the same way a real call would for a bad key or an exhausted quota (`apps/desktop/electron/ai/health.ts`'s `checkAiHealth()`). A 429, or an error body containing "quota"/"RESOURCE_EXHAUSTED"/"rate limit", is classified as `rateLimited: true` specifically, distinct from a bad key or a network error.
+
+Two ways this status gets updated:
+1. **Explicit** — Settings' "Check now" button (`ai:checkStatus` IPC) makes the check on demand.
+2. **Ambient** — after any real AI feature call (News, Entertainment, Earning Ways, Jobs, Food) fails, `main.ts` consults `providers.ts`'s `getLastAiError()` (every provider call now records the HTTP status/body of its last failure there, cleared on success) and updates the same status without a second network request — so a quota failure surfaces immediately, not just the next time someone happens to click "Check now."
+
+The result is pushed to every renderer window via an `ai:statusChanged` event (same push-event pattern as `book:bookmarkUpdated`), consumed by a shared `useAiStatusStore` so Settings' full status panel and the Sidebar's compact warning banner (shown only when the active provider isn't OK, wording differing for "usage limit reached" vs. general "unavailable") stay in sync without either one polling.
+
 ### Encrypted settings
 
 Any settings key that holds a credential (`googleClientId`, `googleClientSecret`, `googleRefreshToken`, `geminiApiKey`, `openaiApiKey`, `anthropicApiKey`) is transparently encrypted at rest with AES-256-GCM (`packages/db/src/secretCrypto.ts`), keyed off a hardcoded app passphrase — `getSetting`/`setSetting` encrypt/decrypt automatically, so callers never see ciphertext. Honest caveat documented in the code: a hardcoded key can't stop someone with the app's own source from deriving it — there's no server-side secret to lean on in a purely local app. What it does protect against, and the actual point of it, is the far more likely case: the raw `.sqlite` file (or a cloud backup of it, or another process scanning disk) exposing API keys just by being opened in a viewer. Verified during the build by grepping the raw DB file for a real seeded key — absent in plaintext, present as `enc:iv:tag:ciphertext`.
@@ -297,7 +307,7 @@ The first real use of `framework.md` as AI context, exactly as originally design
 
 Advisory only — every field is informational, nothing blocks adding or keeping an activity regardless of verdict, matching the "informative only, never a gatekeeper" default `framework.md` §6 recommends.
 
-**Poster/thumbnail (optional)**: an image URL field on the add dialog — always something the user pastes themselves, never asked of the AI (same "never ask AI for a URL" discipline as News/Jobs/Earning Ways, just for images instead of article/job links). The main process fetches it and inlines it as a `data:` URI (`fetchImageAsDataUri`, shared with the YouTube thumbnail lookup below) so cards don't need a live network call to render, and a bad/unreachable URL just leaves the card without an image rather than blocking the add.
+**Poster/thumbnail — automatic**: manually hunting down and pasting a poster image isn't realistic for every entry, so by default one is looked up automatically from **Wikipedia's own free REST API** by title (+ a type-specific hint word — "film", "video game", "TV series", "anime", "book" — to disambiguate, e.g. "Inception" the word vs. the film) — `fetchWikipediaThumbnail()` in `main.ts`, resolving via `opensearch` first when the raw title doesn't hit a page directly. Same "never ask AI for a URL" discipline as News/Jobs/Earning Ways: this is a real search against a real source, never an AI-guessed link. The add dialog's image URL field is now optional and only needed to *override* the automatic pick; either way the URL (found or pasted) is fetched and inlined as a `data:` URI (`fetchImageAsDataUri`, shared with the YouTube thumbnail lookup below), and a miss just leaves the card without an image rather than blocking the add. Both the AI verdict and the thumbnail fetch fire concurrently and independently after the row is created, so neither one delays the other.
 
 ### Earning Ways — ideas + on-demand A-Z guides
 
