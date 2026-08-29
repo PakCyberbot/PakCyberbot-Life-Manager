@@ -42,6 +42,10 @@ const api: LifeManagerApi = {
     push: () => ipcRenderer.invoke('drive:push'),
     pull: () => ipcRenderer.invoke('drive:pull'),
   },
+  backup: {
+    exportDatabase: () => ipcRenderer.invoke('db:export'),
+    importDatabase: () => ipcRenderer.invoke('db:import'),
+  },
   news: {
     fetch: (categoryId) => ipcRenderer.invoke('news:fetch', categoryId),
   },
@@ -54,6 +58,9 @@ const api: LifeManagerApi = {
   },
   jobs: {
     fetch: (searchId) => ipcRenderer.invoke('jobs:fetch', searchId),
+  },
+  food: {
+    generateInfo: (name, quantity) => ipcRenderer.invoke('food:generateInfo', { name, quantity }),
   },
 };
 

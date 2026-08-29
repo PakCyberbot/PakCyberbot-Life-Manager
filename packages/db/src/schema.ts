@@ -277,4 +277,85 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // Time Table — a recurring *weekly* routine, distinct from Calendar's
+  // date-specific events. One daySchedules row per day-of-week (0=Sun..6=Sat,
+  // always exactly 7, seeded once and only ever updated, never added/removed)
+  // holds that day's wake/sleep time; timeSlots hold what to do within it,
+  // also keyed by dayOfWeek so they repeat every week rather than being tied
+  // to one date.
+  `CREATE TABLE IF NOT EXISTS daySchedules (
+    id TEXT PRIMARY KEY,
+    dayOfWeek INTEGER NOT NULL,
+    wakeTime TEXT NOT NULL DEFAULT '07:00',
+    sleepTime TEXT NOT NULL DEFAULT '23:00',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS timeSlots (
+    id TEXT PRIMARY KEY,
+    dayOfWeek INTEGER NOT NULL,
+    startTime TEXT NOT NULL,
+    endTime TEXT NOT NULL,
+    label TEXT NOT NULL,
+    notes TEXT,
+    color TEXT NOT NULL DEFAULT 'blue',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  // Health — four sub-areas sharing one screen (tabs), one store, and this
+  // one schema comment. exercises repeat weekly like Time Table (daysOfWeek,
+  // not a date); doctorAppointments are date-specific; foods get AI-generated
+  // benefits/calories/considerations shortly after being added, same
+  // async-enrichment pattern as Entertainment; bodyMetrics is a simple
+  // dated weight log for a trend view.
+  `CREATE TABLE IF NOT EXISTS exercises (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'strength',
+    daysOfWeek TEXT NOT NULL DEFAULT '',
+    durationMinutes INTEGER,
+    sets INTEGER,
+    reps INTEGER,
+    notes TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS doctorAppointments (
+    id TEXT PRIMARY KEY,
+    doctorName TEXT NOT NULL,
+    specialty TEXT,
+    appointmentAt TEXT NOT NULL,
+    reason TEXT,
+    notes TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS foods (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    price REAL,
+    benefits TEXT,
+    caloriesEstimate TEXT,
+    considerations TEXT,
+    aiGeneratedAt TEXT,
+    aiProvider TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS bodyMetrics (
+    id TEXT PRIMARY KEY,
+    date TEXT NOT NULL,
+    weight REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'kg',
+    notes TEXT,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
 ];

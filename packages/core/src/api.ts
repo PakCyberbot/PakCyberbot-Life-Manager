@@ -109,6 +109,21 @@ export interface DriveApi {
   pull(): Promise<DriveSyncResult>;
 }
 
+export interface BackupResult {
+  ok: boolean;
+  path?: string;
+  error?: string;
+  cancelled?: boolean;
+}
+
+/** Manual local export/import — a Google-account-free alternative/complement to Drive sync. */
+export interface BackupApi {
+  /** Opens a native save dialog; copies the live (freshly flushed) database there. */
+  exportDatabase(): Promise<BackupResult>;
+  /** Opens a native open dialog; validates the file looks like SQLite, then overwrites the local DB. On success, the app relaunches itself. */
+  importDatabase(): Promise<BackupResult>;
+}
+
 export interface NewsFetchResult {
   ok: boolean;
   items?: unknown[];
@@ -189,6 +204,24 @@ export interface JobsApi {
   fetch(searchId: string): Promise<JobsFetchResult>;
 }
 
+export interface FoodInfoPayload {
+  benefits: string;
+  caloriesEstimate: string;
+  considerations: string;
+}
+
+export interface FoodInfoResponse {
+  ok: boolean;
+  info?: FoodInfoPayload;
+  provider?: string;
+  error?: string;
+}
+
+/** Health → Food & Nutrition: AI-generated benefits/calories/considerations on add — see structure.md. */
+export interface FoodApi {
+  generateInfo(name: string, quantity: string): Promise<FoodInfoResponse>;
+}
+
 export interface LifeManagerApi {
   db: DbApi;
   settings: SettingsApi;
@@ -196,10 +229,12 @@ export interface LifeManagerApi {
   dialog: DialogApi;
   media: MediaApi;
   drive: DriveApi;
+  backup: BackupApi;
   news: NewsApi;
   entertainment: EntertainmentApi;
   earningWays: EarningWaysApi;
   jobs: JobsApi;
+  food: FoodApi;
 }
 
 declare global {

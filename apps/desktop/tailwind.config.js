@@ -16,6 +16,7 @@ module.exports = {
         accentTasks: 'rgb(var(--color-accent-tasks) / <alpha-value>)',
         accentMoney: 'rgb(var(--color-accent-money) / <alpha-value>)',
         accentLibrary: 'rgb(var(--color-accent-library) / <alpha-value>)',
+        accentHealth: 'rgb(var(--color-accent-health) / <alpha-value>)',
       },
     },
   },

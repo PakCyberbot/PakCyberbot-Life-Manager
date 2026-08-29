@@ -14,6 +14,7 @@
   --color-accent-tasks: 217 119 6;
   --color-accent-money: 5 150 105;
   --color-accent-library: 225 29 72;
+  --color-accent-health: 13 148 136;
 }
 
 .dark {
@@ -28,6 +29,7 @@
   --color-accent-tasks: 251 191 36;
   --color-accent-money: 52 211 153;
   --color-accent-library: 251 113 133;
+  --color-accent-health: 45 212 191;
 }
 
 html,

@@ -3,9 +3,11 @@ import {
   Banknote,
   Briefcase,
   CalendarDays,
+  CalendarClock,
   CheckSquare,
   Clapperboard,
   FolderTree,
+  HeartPulse,
   LayoutDashboard,
   Library,
   Newspaper,
@@ -24,6 +26,7 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, accent: 'text-primary' },
   { id: 'goals', label: 'Goals', icon: Target, accent: 'text-accentGoals' },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, accent: 'text-accentCalendar' },
+  { id: 'timeTable', label: 'Time Table', icon: CalendarClock, accent: 'text-accentCalendar' },
   { id: 'tasks', label: 'Tasks', icon: CheckSquare, accent: 'text-accentTasks' },
   { id: 'money', label: 'Money', icon: Wallet, accent: 'text-accentMoney' },
   { id: 'library', label: 'Library', icon: Library, accent: 'text-accentLibrary' },
@@ -32,6 +35,7 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
   { id: 'earningWays', label: 'Earning Ways', icon: Banknote, accent: 'text-accentMoney' },
   { id: 'jobs', label: 'Jobs', icon: Briefcase, accent: 'text-accentTasks' },
   { id: 'fileManager', label: 'File Manager', icon: FolderTree, accent: 'text-accentTasks' },
+  { id: 'health', label: 'Health', icon: HeartPulse, accent: 'text-accentHealth' },
 ];
 
 export function Sidebar({ screen, onNavigate }: { screen: ScreenId; onNavigate: (s: ScreenId) => void }) {

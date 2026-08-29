@@ -293,6 +293,92 @@ export function startOfMonth(reference: Date): Date {
 }
 
 // ---------------------------------------------------------------------------
+// Time Table — a recurring weekly routine, distinct from Calendar's
+// date-specific events (see structure.md)
+// ---------------------------------------------------------------------------
+
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+
+export interface DaySchedule extends BaseRow {
+  /** 0 = Sunday .. 6 = Saturday. */
+  dayOfWeek: number;
+  wakeTime: string; // 'HH:MM'
+  sleepTime: string; // 'HH:MM'
+}
+
+export interface TimeSlot extends BaseRow {
+  dayOfWeek: number;
+  startTime: string; // 'HH:MM'
+  endTime: string; // 'HH:MM'
+  label: string;
+  notes?: string | null;
+  color: string;
+}
+
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+}
+
+/** Minutes from `start` to `end`, wrapping past midnight if `end` is numerically earlier (e.g. sleeping at 01:00). */
+export function minutesBetween(start: string, end: string): number {
+  const startMin = toMinutes(start);
+  let endMin = toMinutes(end);
+  if (endMin <= startMin) endMin += 24 * 60;
+  return endMin - startMin;
+}
+
+export function formatMinutes(totalMinutes: number): string {
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+// ---------------------------------------------------------------------------
+// Health — Exercise Schedule, Doctor Appointments, Food & Nutrition, Body Metrics
+// ---------------------------------------------------------------------------
+
+export type ExerciseCategory = 'strength' | 'cardio' | 'flexibility' | 'other';
+
+export interface Exercise extends BaseRow {
+  name: string;
+  category: ExerciseCategory;
+  /** Comma-separated day-of-week numbers, e.g. "1,3,5" — repeats weekly, like Time Table. */
+  daysOfWeek: string;
+  durationMinutes?: number | null;
+  sets?: number | null;
+  reps?: number | null;
+  notes?: string | null;
+}
+
+export interface DoctorAppointment extends BaseRow {
+  doctorName: string;
+  specialty?: string | null;
+  appointmentAt: string; // ISO datetime
+  reason?: string | null;
+  notes?: string | null;
+}
+
+export interface Food extends BaseRow {
+  name: string;
+  quantity: string;
+  price?: number | null;
+  /** Everything below is AI-generated shortly after creation, same async pattern as Entertainment. */
+  benefits?: string | null;
+  caloriesEstimate?: string | null;
+  considerations?: string | null;
+  aiGeneratedAt?: string | null;
+  aiProvider?: string | null;
+}
+
+export interface BodyMetric extends BaseRow {
+  date: string; // ISO date
+  weight: number;
+  unit: string; // 'kg' | 'lb', free text so either works
+  notes?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Toggleable sections
 // ---------------------------------------------------------------------------
 
@@ -302,6 +388,7 @@ export function startOfMonth(reference: Date): Date {
 export const TOGGLEABLE_SECTIONS = [
   'goals',
   'calendar',
+  'timeTable',
   'tasks',
   'money',
   'library',
@@ -310,6 +397,7 @@ export const TOGGLEABLE_SECTIONS = [
   'earningWays',
   'jobs',
   'fileManager',
+  'health',
 ] as const;
 
 export type ToggleableSectionId = (typeof TOGGLEABLE_SECTIONS)[number];

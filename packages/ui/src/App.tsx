@@ -7,6 +7,7 @@ import type { ScreenId } from './navigation';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { GoalsScreen } from './screens/GoalsScreen';
 import { CalendarScreen } from './screens/CalendarScreen';
+import { TimeTableScreen } from './screens/TimeTableScreen';
 import { TasksScreen } from './screens/TasksScreen';
 import { MoneyScreen } from './screens/MoneyScreen';
 import { LibraryScreen } from './screens/LibraryScreen';
@@ -15,6 +16,7 @@ import { EntertainmentScreen } from './screens/EntertainmentScreen';
 import { EarningWaysScreen } from './screens/EarningWaysScreen';
 import { JobsScreen } from './screens/JobsScreen';
 import { FileManagerScreen } from './screens/FileManagerScreen';
+import { HealthScreen } from './screens/HealthScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 
 export function App() {
@@ -36,6 +38,7 @@ export function App() {
         {screen === 'dashboard' && <DashboardScreen onNavigate={setScreen} />}
         {screen === 'goals' && <GoalsScreen />}
         {screen === 'calendar' && <CalendarScreen />}
+        {screen === 'timeTable' && <TimeTableScreen />}
         {screen === 'tasks' && <TasksScreen />}
         {screen === 'money' && <MoneyScreen />}
         {screen === 'library' && <LibraryScreen />}
@@ -44,6 +47,7 @@ export function App() {
         {screen === 'earningWays' && <EarningWaysScreen />}
         {screen === 'jobs' && <JobsScreen onNavigate={setScreen} />}
         {screen === 'fileManager' && <FileManagerScreen />}
+        {screen === 'health' && <HealthScreen />}
         {screen === 'settings' && <SettingsScreen />}
       </AppShell>
     </ThemeProvider>

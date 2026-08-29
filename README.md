@@ -9,6 +9,7 @@ A local-first, cross-platform personal life management app — goals, calendar, 
 - **Dashboard** — today's snapshot across every module, plus a rotating life-quote card
 - **Goals & Targets** — progress tracking, milestones
 - **Calendar** — month view, event scheduling
+- **Time Table** — your recurring weekly routine (distinct from Calendar's dated events): set wake/sleep time per day (or apply one time to several days at once), then fill the hours with time slots — what to do, when, every week
 - **Tasks** — a 3-column to-do board
 - **Money** — accounts, transactions, budgets vs. spend, per-account currency plus a Settings-wide default (e.g. PKR)
 - **Library** — books (linked to a local PDF, with an in-app reader that tracks your bookmark automatically) and videos (YouTube, auto-fetched thumbnail)
@@ -17,10 +18,12 @@ A local-first, cross-platform personal life management app — goals, calendar, 
 - **Earning Ways** — track income ideas manually, or get AI suggestions (grounded in your active Goals + framework.md); open any idea to get a full on-demand guide — steps, skills, tools, timeline, income potential, pitfalls, and named resources (never fabricated links)
 - **Jobs** — real listings aggregated from free job sources (RemoteOK, Arbeitnow, We Work Remotely, Jobicy — never scraped from sites like LinkedIn/Indeed that prohibit it), ranked by your AI provider against searches you define in Settings (keywords + what to prioritize)
 - **File Manager** — your own nested categories (e.g. Cybersecurity → Tools) linking to real folders/files on this machine. Links record which machine they were added from; visible everywhere, but only ever clickable to open on that same machine
+- **Health** — exercise schedule (repeats weekly, like Time Table), doctor appointments (auto-sorted upcoming/past), food & nutrition (add a food with quantity/price, AI fills in benefits/calories/considerations moments later), and body metrics (a simple weight log with trend deltas)
 - **Sections** — every module above (and this one) can be individually hidden from the sidebar via a switch in Settings. Nothing gets deleted, just hidden — flip it back on any time
 - **Life Quotes** — a small curated set you manage from Settings, shown at random on the Dashboard
 - **AI provider** — Gemini, OpenAI, or Anthropic, each via your own API key (no "subscription login" — see [structure.md](structure.md) for why that's not a real option for a third-party app); every credential is encrypted at rest
 - **Google Drive sync** — push/pull your data to your own Drive (needs a one-time free Google credential, see Setup below)
+- **Local backup** — export/import the database as a plain file, no Google account needed, from Settings
 - Light / dark / system theme, opens maximized by default
 
 ## Getting started

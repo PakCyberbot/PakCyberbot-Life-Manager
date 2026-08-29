@@ -3,6 +3,7 @@ import {
   Banknote,
   BookOpen,
   Briefcase,
+  CalendarClock,
   CalendarDays,
   Clapperboard,
   CheckSquare,
@@ -12,6 +13,7 @@ import {
   ExternalLink,
   FolderOpen,
   FolderTree,
+  HeartPulse,
   LayoutGrid,
   Library,
   Newspaper,
@@ -145,6 +147,8 @@ export function SettingsScreen() {
       </Card>
 
       <DriveSyncCard />
+
+      <BackupCard />
 
       <AiProvidersCard />
 
@@ -373,6 +377,70 @@ function DriveSyncCard() {
               </Button>
             </>
           )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Local backup (export / import)
+// ---------------------------------------------------------------------------
+
+function BackupCard() {
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const exportDb = async () => {
+    setBusy('export');
+    setMessage(null);
+    const result = await getApi().backup.exportDatabase();
+    setBusy(null);
+    if (result.cancelled) return;
+    setMessage(result.ok ? `Exported to ${result.path}` : (result.error ?? 'Export failed.'));
+  };
+
+  const importDb = async () => {
+    if (
+      !confirm(
+        'This replaces everything currently in the app with the file you pick. Anything not backed up elsewhere will be lost. Continue?'
+      )
+    ) {
+      return;
+    }
+    setBusy('import');
+    setMessage(null);
+    const result = await getApi().backup.importDatabase();
+    // On success, main process relaunches the app — this line usually won't run.
+    if (result.cancelled) {
+      setBusy(null);
+      return;
+    }
+    if (!result.ok) {
+      setBusy(null);
+      setMessage(result.error ?? 'Import failed.');
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Local backup</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="flex items-start gap-2 text-sm text-muted">
+          <FolderOpen size={16} className="mt-0.5 shrink-0" />
+          A plain file copy of your whole database — no Google account needed. Export it anywhere (a USB drive, a
+          different folder, another sync tool of your own) and import it back on any device running this app.
+        </p>
+        {message && <p className="text-sm text-muted">{message}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={exportDb} disabled={busy !== null}>
+            <Download size={14} /> {busy === 'export' ? 'Exporting…' : 'Export database'}
+          </Button>
+          <Button size="sm" variant="outline" onClick={importDb} disabled={busy !== null}>
+            <Upload size={14} /> {busy === 'import' ? 'Importing…' : 'Import database'}
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -728,6 +796,7 @@ function JobSearchRow({
 const SECTION_META: Record<ToggleableSectionId, { label: string; icon: typeof Target }> = {
   goals: { label: 'Goals', icon: Target },
   calendar: { label: 'Calendar', icon: CalendarDays },
+  timeTable: { label: 'Time Table', icon: CalendarClock },
   tasks: { label: 'Tasks', icon: CheckSquare },
   money: { label: 'Money', icon: Wallet },
   library: { label: 'Library', icon: Library },
@@ -736,6 +805,7 @@ const SECTION_META: Record<ToggleableSectionId, { label: string; icon: typeof Ta
   earningWays: { label: 'Earning Ways', icon: Banknote },
   jobs: { label: 'Jobs', icon: Briefcase },
   fileManager: { label: 'File Manager', icon: FolderTree },
+  health: { label: 'Health', icon: HeartPulse },
 };
 
 function SectionsCard() {

@@ -72,6 +72,18 @@ function seedDefaultNewsCategories(db: Database) {
   }
 }
 
+// Exactly 7 rows, one per day-of-week (0=Sun..6=Sat) — seeded once and only
+// ever updated from the UI afterward, never added to or removed from.
+function seedDefaultDaySchedules(db: Database) {
+  const now = new Date().toISOString();
+  for (let dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++) {
+    db.run(
+      'INSERT INTO daySchedules (id, dayOfWeek, wakeTime, sleepTime, createdAt, updatedAt, deletedAt) VALUES (?, ?, ?, ?, ?, ?, NULL)',
+      [crypto.randomUUID(), dayOfWeek, '07:00', '23:00', now, now]
+    );
+  }
+}
+
 /** The desktop store adds a few methods beyond the generic DataStore shape:
  * - getSetting/setSetting: `settings` is keyed by `key`, not `id`, and
  *   transparently encrypts/decrypts anything in SECRET_SETTING_KEYS.
@@ -81,6 +93,8 @@ function seedDefaultNewsCategories(db: Database) {
 export interface ElectronDataStore extends DataStore {
   getSetting(key: string): string | null;
   setSetting(key: string, value: string): void;
+  /** Forces an immediate synchronous write to disk, without closing the store — use before copying the DB file out. */
+  flush(): void;
   replaceNewsItems(
     categoryId: string,
     items: Array<{ id: string; title: string; summary: string | null; url: string; source: string | null; publishedAt: string | null }>
@@ -130,6 +144,7 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
 
   if (tableIsEmpty('quotes')) seedDefaultQuotes(db);
   if (tableIsEmpty('newsCategories')) seedDefaultNewsCategories(db);
+  if (tableIsEmpty('daySchedules')) seedDefaultDaySchedules(db);
 
   // Write the file immediately on first launch so it exists on disk right
   // away (useful for backups/discoverability), rather than only appearing
@@ -239,6 +254,9 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
       }
       persist();
     },
+
+    /** Forces an immediate synchronous write, without shutting the store down — use before copying the file out (export). */
+    flush,
 
     close: flush,
   };

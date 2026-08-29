@@ -13,3 +13,5 @@ export * from './stores/useEntertainmentStore';
 export * from './stores/useEarningWaysStore';
 export * from './stores/useJobsStore';
 export * from './stores/useFileManagerStore';
+export * from './stores/useTimeTableStore';
+export * from './stores/useHealthStore';

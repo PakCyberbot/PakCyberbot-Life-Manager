@@ -1,7 +1,7 @@
 import { type HTMLAttributes } from 'react';
 import clsx from 'clsx';
 
-type Tone = 'default' | 'goals' | 'calendar' | 'tasks' | 'money' | 'library' | 'success' | 'warning' | 'danger';
+type Tone = 'default' | 'goals' | 'calendar' | 'tasks' | 'money' | 'library' | 'health' | 'success' | 'warning' | 'danger';
 
 const toneClasses: Record<Tone, string> = {
   default: 'bg-muted/15 text-muted',
@@ -10,6 +10,7 @@ const toneClasses: Record<Tone, string> = {
   tasks: 'bg-accentTasks/15 text-accentTasks',
   money: 'bg-accentMoney/15 text-accentMoney',
   library: 'bg-accentLibrary/15 text-accentLibrary',
+  health: 'bg-accentHealth/15 text-accentHealth',
   success: 'bg-emerald-500/15 text-emerald-500',
   warning: 'bg-amber-500/15 text-amber-500',
   danger: 'bg-red-500/15 text-red-500',

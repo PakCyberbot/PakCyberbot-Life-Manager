@@ -214,7 +214,7 @@ This section was written before the build; §11's "Google Drive sync" subsection
 
 The desktop app is scaffolded and running, branded as **PakCyberbot Life Manager** (window icon + sidebar mark from `logo.ico`/`logo.png` at the repo root). What exists right now:
 
-- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Tasks (3-column to-do/in-progress/done board), Calendar (month grid, click a day to view/add events), Money (accounts, transactions, budgets vs. spend, per-account currency + a Settings-wide default), **Library** (Books & Videos), **News & Updates**, **Entertainment**, **Earning Ways**, **Jobs**, **File Manager** (see below for all five), Settings (theme, default currency, PDF reader config, quotes management, Google Drive sync, AI provider + keys, News categories, Entertainment criteria, Job searches, **per-module Sections toggles**)
+- **Screens**: Dashboard (today view across all modules + a random Quotes card), Goals (cards + progress + milestones in a detail dialog), Calendar (month grid, click a day to view/add events), **Time Table** (recurring weekly routine — see below), Tasks (3-column to-do/in-progress/done board), Money (accounts, transactions, budgets vs. spend, per-account currency + a Settings-wide default), **Library** (Books & Videos), **News & Updates**, **Entertainment**, **Earning Ways**, **Jobs**, **File Manager**, **Health** (see below for all six), Settings (theme, default currency, PDF reader config, quotes management, Google Drive sync, local backup export/import, AI provider + keys, News categories, Entertainment criteria, Job searches, per-module Sections toggles)
 - **Theme**: light/dark/system, toggled from the sidebar or Settings, persisted per-device in `localStorage`; primary accent shifted to a green matching the new logo, plus a sixth module accent (rose) for Library
 - **Window**: opens maximized by default ("full screen" in the everyday sense — fills the screen but keeps the title bar/taskbar, unlike OS kiosk fullscreen which hides all window chrome)
 - **Data**: everything persists locally to `%APPDATA%/PakCyberbot Life Manager/life-manager.sqlite` via sql.js — closing and reopening the app keeps your data
@@ -234,6 +234,22 @@ Settings now has a real **Push to Drive** / **Pull from Drive** pair, not a plac
 - **Auth**: the standard installed-app OAuth loopback flow (RFC 8252) — a temporary `127.0.0.1` server catches Google's redirect after you approve access in your normal browser, no embedded webview. Refresh token stored in the local `settings` table.
 - **Implementation**: plain `fetch` calls against the Drive v3 REST API and Google's OAuth token endpoint (`apps/desktop/electron/driveSync.ts`) — deliberately not the `googleapis` SDK, which is tens of MB for the handful of calls this needs.
 - **What you still need to do**: paste a Google OAuth "Desktop app" Client ID + Secret into Settings once — see the setup steps in chat. Nothing here can be tested end-to-end without that; it's a genuine external dependency, not a code gap.
+
+### Local backup — export/import, no Google account needed
+
+A plain file-copy alternative to Drive sync, for anyone who'd rather not set up Google credentials at all, or just wants an ad-hoc backup before trying something risky. Two buttons in Settings:
+
+- **Export**: `store.flush()` (a new `ElectronDataStore` method — forces an immediate synchronous write, distinct from `close()`, which also shuts the store down) guarantees the copy reflects the truly latest state rather than whatever the last debounced autosave happened to write, then a native save dialog + `fs.copyFileSync` copies `life-manager.sqlite` wherever the user picks.
+- **Import**: a native open dialog, a cheap sanity check (SQLite files always start with the 16-byte magic header `"SQLite format 3\0"` — verified against a real DB file during the build, since it's easy to get the exact bytes wrong; this guards against overwriting real data with an unrelated file the user misclicked), then the same confirm-first / overwrite / `app.relaunch()` + `app.exit()` pattern as Drive's pull, for the same reason: guarantee every in-memory cache reloads clean rather than hot-patching each one.
+
+### Time Table — a recurring weekly routine, not Calendar
+
+Sits right below Calendar in the sidebar, and is deliberately a different concept: Calendar events are tied to a specific date; Time Table is a **weekly template** that repeats forever — "every Monday, 9–10:30 is deep work" — keyed by day-of-week (0=Sun..6=Sat) rather than a date.
+
+- **`daySchedules`**: exactly 7 rows, one per day-of-week, seeded once on first launch (`07:00`–`23:00` default) and only ever updated afterward, never added to or deleted — there's always exactly one schedule per day of the week, by construction.
+- **Awake time**: computed client-side (`minutesBetween`/`formatMinutes` in `packages/shared`) as the gap between that day's wake and sleep time, with overnight wrap handled (a sleep time numerically earlier than wake time, e.g. sleeping at 01:00, adds 24h before subtracting) — verified with a small unit test during the build alongside the seed/CRUD flow itself (exercised directly against the running store, no UI needed, since none of this touches a native dialog).
+- **"Any selected days" bulk editing**: per the user's specific ask — editing one day's wake/sleep is the default, but "Apply this to other days…" opens a multi-select of the remaining 6 days and copies the current day's times onto all of them at once (`applyScheduleToDays`), rather than requiring one-at-a-time edits for a schedule that's usually the same across weekdays.
+- **`timeSlots`**: any number per day-of-week, each a label + start/end time + optional notes/color, sorted by start time. A progress bar shows scheduled-vs-awake minutes for the currently viewed day.
 
 ### AI providers — API key only, by design
 
@@ -286,7 +302,7 @@ All four are queried in parallel (`Promise.allSettled` — one source failing do
 
 ### Sections — show/hide any module from Settings
 
-A single Settings card lists every toggleable module (`packages/shared`'s `TOGGLEABLE_SECTIONS` — Goals, Calendar, Tasks, Money, Library, News, Entertainment, Earning Ways, Jobs, File Manager) with a switch each. Turning one off hides it from the sidebar entirely — not a disabled/greyed-out state, just gone, same as if that module didn't exist for you — and turning it back on brings it right back with all its data intact (nothing is deleted, only hidden). Dashboard and Settings are deliberately excluded from the list and can't be turned off, since disabling Settings would remove the only way back in to re-enable anything.
+A single Settings card lists every toggleable module (`packages/shared`'s `TOGGLEABLE_SECTIONS` — Goals, Calendar, Time Table, Tasks, Money, Library, News, Entertainment, Earning Ways, Jobs, File Manager, Health) with a switch each. Turning one off hides it from the sidebar entirely — not a disabled/greyed-out state, just gone, same as if that module didn't exist for you — and turning it back on brings it right back with all its data intact (nothing is deleted, only hidden). Dashboard and Settings are deliberately excluded from the list and can't be turned off, since disabling Settings would remove the only way back in to re-enable anything.
 
 Stored as a single `disabledSections` setting (comma-separated list of the ones turned *off* — everything not listed defaults to on), so adding a new toggleable module later is one line in `TOGGLEABLE_SECTIONS` plus a `SECTION_META` entry for its label/icon in Settings, not a new settings key each time. If the section currently being viewed gets toggled off, `App.tsx` bounces back to Dashboard rather than leaving the user stranded on a screen no longer reachable from the sidebar.
 
@@ -301,6 +317,17 @@ Started as the one module that's off by default, then generalized into a proper 
 **Adding a link**: `dialog:pickFileOrFolder` opens one native dialog offering both `openFile` and `openDirectory` (Windows/Linux; macOS falls back to file-only, a platform limitation of its picker, not this app's choice), then `fs.statSync` in the main process determines folder-vs-file once at add time so the renderer never needs to guess. Opening later goes through `system:openLocalPath`, which wraps `shell.openPath` — the same call handles both a folder (opens it in Explorer) and a file (opens it with its default app), so no branching is needed there either.
 
 **Deleting a category cascades**: removing a category also soft-deletes every descendant category and every link inside any of them (`collectDescendantIds`, a plain breadth-first walk over `parentId` — unit-tested against a 4-level nested tree during the build) rather than either blocking the delete or silently orphaning children.
+
+### Health — exercise, appointments, nutrition, body metrics
+
+One screen (`HealthScreen.tsx`), four tabs, one combined `useHealthStore` — a teal `accentHealth` identity distinct from every other module. Per the user's ask ("you can add any other section within this health section if you want"), a fourth sub-area (Body Metrics) was added beyond the three explicitly requested, since it reuses the existing simple-dated-log pattern and fits the theme without needing a charting library.
+
+- **Exercise Schedule**: repeats weekly by `daysOfWeek` (comma-separated day-of-week numbers), same underlying idea as Time Table's `dayOfWeek` keying but per-exercise rather than one row per day — an exercise can be assigned to any subset of days at once (e.g. "1,3,5" for Mon/Wed/Fri) via a multi-select in the add dialog, rather than requiring one row per day. Category (strength/cardio/flexibility/other) drives the icon; duration/sets/reps are all optional since not every exercise fits that shape (e.g. a 30-minute walk has duration but no sets/reps).
+- **Doctor Appointments**: date-specific (`appointmentAt`, an ISO datetime — unlike Exercise's weekly recurrence), sorted chronologically. Upcoming vs. past is computed at render time by comparing to `Date.now()`, not a manual status field the user would have to maintain — a `Past` badge and dimmed styling apply automatically once the appointment's time has elapsed.
+- **Food & Nutrition — the AI feature this section was built around**: add a food's name + quantity + optional price; the row appears immediately and an AI call (`apps/desktop/electron/ai/food.ts`) fills in benefits, a calorie estimate, and any moderation considerations moments later — identical non-blocking pattern to Entertainment's verdict (`pendingFoodIds` tracks in-flight rows so the card can show a "Getting nutrition info…" state instead of leaving stale blanks). One JSON object per call: `{benefits, caloriesEstimate, considerations}`. Not grounded in `framework.md` (unlike Entertainment/Earning Ways) — nutrition facts don't depend on the user's personal values the way "is this worth my time" or "what should I pursue" do.
+- **Body Metrics**: a simple dated weight log (`date`, `weight`, `unit` — free text so `kg`/`lb` both work without an enum), newest-first, with a computed delta against the previous entry (green ↓ / red ↑) shown inline — pure client-side arithmetic, no AI involved.
+- **Overview strip**: four `StatCard`-style tiles at the top (today's exercise count, next appointment, foods logged this week, latest weight) each jump straight to their tab on click — same interaction pattern as Dashboard's own stat cards linking out to full screens.
+- No seed data — health data is personal, so (unlike Quotes or News categories) all four tables start empty for every new install.
 
 ### Library — Books & Videos
 

@@ -10,6 +10,7 @@ import { fetchNewsForCategory } from './ai/news';
 import { generateEntertainmentVerdict } from './ai/entertainment';
 import { generateEarningWayGuide, suggestEarningWays } from './ai/earningWays';
 import { fetchJobsForSearch } from './ai/jobs';
+import { generateFoodInfo } from './ai/food';
 import type { AiProviderId } from './ai/providers';
 
 // Without this, Electron derives the app name from package.json's "main"
@@ -382,6 +383,15 @@ app.whenReady().then(async () => {
     return { ok: true, jobs: store!.list('jobListings', { searchId }) };
   });
 
+  ipcMain.handle('food:generateInfo', async (_e, input: { name: string; quantity: string }) => {
+    const provider = (store!.getSetting('aiProvider') as AiProviderId | null) ?? 'gemini';
+    const apiKey = store!.getSetting(`${provider}ApiKey`);
+    if (!apiKey) return { ok: false, error: 'No AI provider configured — set one up in Settings.' };
+    const info = await generateFoodInfo(provider, apiKey, input.name, input.quantity);
+    if (!info) return { ok: false, error: 'Could not get nutrition info — check your API key/quota and try again.' };
+    return { ok: true, info, provider };
+  });
+
   ipcMain.handle('drive:status', () => driveSync.status());
   ipcMain.handle('drive:connect', () => driveSync.connect());
   ipcMain.handle('drive:disconnect', () => driveSync.disconnect());
@@ -399,6 +409,57 @@ app.whenReady().then(async () => {
       app.exit(0);
     }
     return result;
+  });
+
+  ipcMain.handle('db:export', async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    const options: Electron.SaveDialogOptions = {
+      defaultPath: `life-manager-backup-${new Date().toISOString().slice(0, 10)}.sqlite`,
+      filters: [{ name: 'SQLite database', extensions: ['sqlite'] }],
+    };
+    const result = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) return { ok: false, cancelled: true };
+    try {
+      store!.flush(); // guarantee the copy reflects the very latest state, not whatever the debounced autosave last wrote
+      fs.copyFileSync(dbPath, result.filePath);
+      return { ok: true, path: result.filePath };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('db:import', async () => {
+    const win = BrowserWindow.getFocusedWindow();
+    const options: Electron.OpenDialogOptions = {
+      properties: ['openFile'],
+      filters: [{ name: 'SQLite database', extensions: ['sqlite', 'db'] }],
+    };
+    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return { ok: false, cancelled: true };
+
+    const picked = result.filePaths[0];
+    try {
+      // SQLite files always start with this exact 16-byte magic header — a
+      // cheap sanity check before overwriting the user's real data with
+      // whatever they happened to click on.
+      const header = Buffer.alloc(16);
+      const fd = fs.openSync(picked, 'r');
+      fs.readSync(fd, header, 0, 16, 0);
+      fs.closeSync(fd);
+      if (header.toString('utf-8') !== 'SQLite format 3 ') {
+        return { ok: false, error: "That file doesn't look like a valid SQLite database." };
+      }
+
+      fs.copyFileSync(picked, dbPath);
+      // Same reasoning as drive:pull above: relaunch via app.exit() so every
+      // in-memory cache reloads clean, and the pre-import data in memory
+      // can't sneak back in through a normal quit-flush.
+      app.relaunch();
+      app.exit(0);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   });
 
   mainWindow = await createWindow();
