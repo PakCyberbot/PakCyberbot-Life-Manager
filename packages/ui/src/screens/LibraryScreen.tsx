@@ -79,7 +79,7 @@ export function LibraryScreen() {
             <Select
               value={hostFilter}
               onChange={(e) => setHostFilter(e.target.value)}
-              className="h-8 py-1 text-xs leading-tight"
+              className="h-8 !py-1 !text-xs"
               title="Filter books by which machine they were added from"
             >
               <option value="all">All hosts</option>
