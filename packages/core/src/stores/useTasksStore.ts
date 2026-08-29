@@ -1,12 +1,21 @@
 import { create } from 'zustand';
-import { newId, nowIso, type Task } from '@life-manager/shared';
+import { newId, nowIso, type Task, type TaskLinkType } from '@life-manager/shared';
 import { getApi } from '../api';
+
+// Tasks live inside a Goal (created from its detail view) — see structure.md's
+// Goals section. A task can optionally carry one link: a local file/folder
+// path, or a reference to a Library book/video (jump-to-item in Library).
 
 export interface NewTaskInput {
   title: string;
   notes?: string | null;
   dueDate?: string | null;
   priority: Task['priority'];
+  linkedGoalId: string;
+  linkType?: TaskLinkType | null;
+  linkPath?: string | null;
+  linkHostname?: string | null;
+  linkTargetId?: string | null;
 }
 
 interface TasksState {
@@ -14,7 +23,7 @@ interface TasksState {
   loading: boolean;
   loaded: boolean;
   fetchTasks: () => Promise<void>;
-  addTask: (input: NewTaskInput) => Promise<void>;
+  addTask: (input: NewTaskInput) => Promise<Task>;
   updateTask: (id: string, patch: Partial<Task>) => Promise<void>;
   setStatus: (id: string, status: Task['status']) => Promise<void>;
   removeTask: (id: string) => Promise<void>;
@@ -39,13 +48,18 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       dueDate: input.dueDate ?? null,
       priority: input.priority,
       status: 'todo',
-      linkedGoalId: null,
+      linkedGoalId: input.linkedGoalId,
+      linkType: input.linkType ?? null,
+      linkPath: input.linkPath ?? null,
+      linkHostname: input.linkHostname ?? null,
+      linkTargetId: input.linkTargetId ?? null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,
     };
     await getApi().db.create('tasks', task);
     set({ tasks: [task, ...get().tasks] });
+    return task;
   },
 
   async updateTask(id, patch) {

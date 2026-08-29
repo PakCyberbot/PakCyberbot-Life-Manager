@@ -37,11 +37,13 @@ export interface Milestone extends BaseRow {
 }
 
 // ---------------------------------------------------------------------------
-// Tasks
+// Tasks — live inside a Goal, not a standalone module (see structure.md).
 // ---------------------------------------------------------------------------
 
 export type TaskPriority = 'low' | 'medium' | 'high';
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
+/** What a task's optional single link points at: a local path, or a Library item. */
+export type TaskLinkType = 'file' | 'folder' | 'book' | 'video';
 
 export interface Task extends BaseRow {
   title: string;
@@ -49,7 +51,15 @@ export interface Task extends BaseRow {
   dueDate?: string | null;
   priority: TaskPriority;
   status: TaskStatus;
+  /** Every task belongs to a goal — created from inside that goal's detail view. */
   linkedGoalId?: ID | null;
+  linkType?: TaskLinkType | null;
+  /** For linkType 'file'/'folder': the local path. */
+  linkPath?: string | null;
+  /** For linkType 'file'/'folder': the machine it was added from — same hostname-gating as File Manager. */
+  linkHostname?: string | null;
+  /** For linkType 'book'/'video': the linked Book/Video's id — jump to it in Library. */
+  linkTargetId?: ID | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +145,8 @@ export interface Book extends BaseRow {
   bookmarkPage: number;
   status: BookStatus;
   notes?: string | null;
+  /** Set automatically to a goal's title when a Task links this book — see structure.md's Goals/Tasks section. */
+  category?: string | null;
 }
 
 export interface Quote extends BaseRow {
@@ -279,6 +291,8 @@ export interface Video extends BaseRow {
   thumbnail?: string | null;
   status: VideoStatus;
   notes?: string | null;
+  /** Set automatically to a goal's title when a Task links this video — see structure.md's Goals/Tasks section. */
+  category?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -413,12 +427,12 @@ export interface BodyMetric extends BaseRow {
 
 /** Every module screen that can be individually shown/hidden from Settings.
  * Dashboard and Settings itself are deliberately excluded — always-on, since
- * disabling Settings would leave no way back in to re-enable anything. */
+ * disabling Settings would leave no way back in to re-enable anything.
+ * 'tasks' isn't listed — tasks live inside Goals now, not a standalone screen. */
 export const TOGGLEABLE_SECTIONS = [
   'goals',
   'calendar',
   'timeTable',
-  'tasks',
   'money',
   'library',
   'news',

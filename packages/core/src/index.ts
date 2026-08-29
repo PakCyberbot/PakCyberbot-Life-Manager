@@ -15,3 +15,4 @@ export * from './stores/useJobsStore';
 export * from './stores/useFileManagerStore';
 export * from './stores/useTimeTableStore';
 export * from './stores/useHealthStore';
+export * from './stores/useUiFocusStore';

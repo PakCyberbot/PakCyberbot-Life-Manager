@@ -141,7 +141,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
           label="Due today / overdue"
           value={String(dueTodayTasks.length)}
           sub={`${openTasks.length} open total`}
-          onClick={() => onNavigate('tasks')}
+          onClick={() => onNavigate('goals')}
         />
         <StatCard
           icon={<CalendarDays size={16} />}

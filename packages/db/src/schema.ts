@@ -29,6 +29,9 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // Tasks live inside a Goal (created from its detail view), not a standalone
+  // module — linkType/linkPath/linkHostname/linkTargetId are an optional
+  // single link: a local file/folder path, or a Library book/video's id.
   `CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -37,6 +40,10 @@ export const SCHEMA_STATEMENTS: string[] = [
     priority TEXT NOT NULL DEFAULT 'medium',
     status TEXT NOT NULL DEFAULT 'todo',
     linkedGoalId TEXT,
+    linkType TEXT,
+    linkPath TEXT,
+    linkHostname TEXT,
+    linkTargetId TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
@@ -143,6 +150,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     bookmarkPage INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'to-read',
     notes TEXT,
+    category TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
@@ -157,6 +165,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     thumbnail TEXT,
     status TEXT NOT NULL DEFAULT 'to-watch',
     notes TEXT,
+    category TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

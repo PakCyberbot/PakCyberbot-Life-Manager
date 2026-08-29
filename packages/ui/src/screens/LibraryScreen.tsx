@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, ExternalLink, FileWarning, FileX, FolderOpen, Play, Plus, Trash2 } from 'lucide-react';
-import { getApi, useBooksStore, useVideosStore } from '@life-manager/core';
+import { getApi, useBooksStore, useUiFocusStore, useVideosStore } from '@life-manager/core';
 import { formatDate, type Book, type BookStatus, type Video, type VideoKind, type VideoStatus } from '@life-manager/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -33,6 +33,8 @@ export function LibraryScreen() {
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [hostname, setHostname] = useState<string | null>(null);
   const [hostFilter, setHostFilter] = useState<string>('all');
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
   useEffect(() => {
     if (!booksLoaded) fetchBooks();
@@ -41,6 +43,16 @@ export function LibraryScreen() {
     useBooksStore.getState().subscribeToBookmarkUpdates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A Task's linked book/video sets this (see GoalsScreen) to jump straight
+  // to that item — switch to its tab, remember its id to scroll+highlight it,
+  // then clear the signal so it only fires once per navigation.
+  useEffect(() => {
+    if (!libraryFocus) return;
+    setTab(libraryFocus.type === 'book' ? 'books' : 'videos');
+    setHighlightId(libraryFocus.id);
+    clearLibraryFocus();
+  }, [libraryFocus, clearLibraryFocus]);
 
   // Distinct machines that have added at least one book with a real file path.
   // A book with no path at all is visible regardless of which host is
@@ -100,9 +112,9 @@ export function LibraryScreen() {
       </div>
 
       {tab === 'books' ? (
-        <BooksGrid books={filteredBooks} hostname={hostname} onEmptyAdd={() => setBookDialogOpen(true)} />
+        <BooksGrid books={filteredBooks} hostname={hostname} highlightId={highlightId} onEmptyAdd={() => setBookDialogOpen(true)} />
       ) : (
-        <VideosGrid videos={videos} onEmptyAdd={() => setVideoDialogOpen(true)} />
+        <VideosGrid videos={videos} highlightId={highlightId} onEmptyAdd={() => setVideoDialogOpen(true)} />
       )}
 
       <NewBookDialog open={bookDialogOpen} onClose={() => setBookDialogOpen(false)} />
@@ -115,9 +127,24 @@ export function LibraryScreen() {
 // Books
 // ---------------------------------------------------------------------------
 
-function BooksGrid({ books, hostname, onEmptyAdd }: { books: Book[]; hostname: string | null; onEmptyAdd: () => void }) {
+function BooksGrid({
+  books,
+  hostname,
+  highlightId,
+  onEmptyAdd,
+}: {
+  books: Book[];
+  hostname: string | null;
+  highlightId: string | null;
+  onEmptyAdd: () => void;
+}) {
   const { removeBook, setBookmark, openBook, openBookExternally } = useBooksStore();
   const [openError, setOpenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    document.getElementById(`library-book-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, books]);
 
   if (books.length === 0) {
     return (
@@ -146,7 +173,14 @@ function BooksGrid({ books, hostname, onEmptyAdd }: { books: Book[]; hostname: s
         {books.map((b) => {
           const onOtherMachine = b.hostname && hostname && b.hostname !== hostname;
           return (
-            <Card key={b.id} className="group flex flex-col overflow-hidden">
+            <Card
+              key={b.id}
+              id={`library-book-${b.id}`}
+              className={clsx(
+                'group flex flex-col overflow-hidden',
+                highlightId === b.id && 'ring-2 ring-accentLibrary'
+              )}
+            >
               <button
                 onClick={async () => {
                   setOpenError(null);
@@ -175,9 +209,16 @@ function BooksGrid({ books, hostname, onEmptyAdd }: { books: Book[]; hostname: s
               </button>
               <div className="flex flex-1 flex-col gap-1.5 p-3">
                 <p className="line-clamp-2 text-sm font-medium leading-snug">{b.title}</p>
-                <Badge tone={BOOK_STATUS_TONE[b.status]} className="w-fit">
-                  {b.status}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1">
+                  <Badge tone={BOOK_STATUS_TONE[b.status]} className="w-fit">
+                    {b.status}
+                  </Badge>
+                  {b.category && (
+                    <Badge tone="goals" className="w-fit" title="Linked to this goal via a Task">
+                      {b.category}
+                    </Badge>
+                  )}
+                </div>
                 {b.filePath && (
                   <div className="mt-auto flex items-center gap-1.5 pt-1">
                     <span className="text-[11px] text-muted">Page</span>
@@ -298,8 +339,21 @@ function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }
 // Videos
 // ---------------------------------------------------------------------------
 
-function VideosGrid({ videos, onEmptyAdd }: { videos: Video[]; onEmptyAdd: () => void }) {
+function VideosGrid({
+  videos,
+  highlightId,
+  onEmptyAdd,
+}: {
+  videos: Video[];
+  highlightId: string | null;
+  onEmptyAdd: () => void;
+}) {
   const { removeVideo, updateVideo } = useVideosStore();
+
+  useEffect(() => {
+    if (!highlightId) return;
+    document.getElementById(`library-video-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightId, videos]);
 
   if (videos.length === 0) {
     return (
@@ -319,7 +373,11 @@ function VideosGrid({ videos, onEmptyAdd }: { videos: Video[]; onEmptyAdd: () =>
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {videos.map((v) => (
-        <Card key={v.id} className="group flex flex-col overflow-hidden">
+        <Card
+          key={v.id}
+          id={`library-video-${v.id}`}
+          className={clsx('group flex flex-col overflow-hidden', highlightId === v.id && 'ring-2 ring-accentLibrary')}
+        >
           <button
             onClick={() => getApi().system.openExternal(v.url)}
             title="Open in browser"
@@ -338,15 +396,22 @@ function VideosGrid({ videos, onEmptyAdd }: { videos: Video[]; onEmptyAdd: () =>
           </button>
           <div className="flex flex-1 flex-col gap-1.5 p-3">
             <p className="line-clamp-2 text-sm font-medium leading-snug">{v.title}</p>
-            <select
-              value={v.status}
-              onChange={(e) => updateVideo(v.id, { status: e.target.value as VideoStatus })}
-              className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
-            >
-              <option value="to-watch">To watch</option>
-              <option value="watching">Watching</option>
-              <option value="watched">Watched</option>
-            </select>
+            <div className="flex flex-wrap items-center gap-1">
+              <select
+                value={v.status}
+                onChange={(e) => updateVideo(v.id, { status: e.target.value as VideoStatus })}
+                className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+              >
+                <option value="to-watch">To watch</option>
+                <option value="watching">Watching</option>
+                <option value="watched">Watched</option>
+              </select>
+              {v.category && (
+                <Badge tone="goals" className="w-fit" title="Linked to this goal via a Task">
+                  {v.category}
+                </Badge>
+              )}
+            </div>
             <div className="mt-auto flex items-center justify-between pt-1">
               <span className="text-[11px] text-muted">{formatDate(v.createdAt)}</span>
               <button onClick={() => removeVideo(v.id)} className="text-muted opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100">
