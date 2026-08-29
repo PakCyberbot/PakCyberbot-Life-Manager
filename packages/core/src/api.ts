@@ -9,7 +9,11 @@ export interface DbApi {
   get<T>(table: string, id: string): Promise<T | null>;
   create<T>(table: string, row: T): Promise<T>;
   update(table: string, id: string, patch: Record<string, unknown>): Promise<void>;
+  /** Soft delete: sets deletedAt, row stays in the DB (recoverable in principle, used everywhere by default). */
   remove(table: string, id: string): Promise<void>;
+  /** Genuinely deletes the row — used where nothing should linger after an explicit delete (e.g. Library books/videos,
+   * which can carry a sizable data: URI cover/thumbnail). */
+  hardRemove(table: string, id: string): Promise<void>;
 }
 
 /** Simple key-value app settings (reader path, etc.) — see structure.md. */

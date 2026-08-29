@@ -95,6 +95,10 @@ export interface ElectronDataStore extends DataStore {
   setSetting(key: string, value: string): void;
   /** Forces an immediate synchronous write to disk, without closing the store — use before copying the DB file out. */
   flush(): void;
+  /** Genuinely deletes the row (unlike `remove`, which only sets deletedAt). Used where soft-delete's "keep it around
+   * for potential recovery" trade-off doesn't apply — e.g. Library books/videos, which can also carry a sizable
+   * data: URI cover/thumbnail that shouldn't linger in the DB forever after the user explicitly deletes the item. */
+  hardRemove(table: string, id: string): void;
   replaceNewsItems(
     categoryId: string,
     items: Array<{ id: string; title: string; summary: string | null; url: string; source: string | null; publishedAt: string | null }>
@@ -213,6 +217,11 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
 
     remove(table: string, id: string): void {
       db.run(`UPDATE ${table} SET deletedAt = ? WHERE id = ?`, [new Date().toISOString(), id]);
+      persist();
+    },
+
+    hardRemove(table: string, id: string): void {
+      db.run(`DELETE FROM ${table} WHERE id = ?`, [id]);
       persist();
     },
 

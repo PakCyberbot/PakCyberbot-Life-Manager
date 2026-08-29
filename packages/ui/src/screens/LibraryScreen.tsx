@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, ExternalLink, FileWarning, FolderOpen, Play, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, ExternalLink, FileWarning, FileX, FolderOpen, Play, Plus, Trash2 } from 'lucide-react';
 import { getApi, useBooksStore, useVideosStore } from '@life-manager/core';
 import { formatDate, type Book, type BookStatus, type Video, type VideoKind, type VideoStatus } from '@life-manager/shared';
 import { Card } from '../components/ui/Card';
@@ -32,6 +32,7 @@ export function LibraryScreen() {
   const [bookDialogOpen, setBookDialogOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [hostname, setHostname] = useState<string | null>(null);
+  const [hostFilter, setHostFilter] = useState<string>('all');
 
   useEffect(() => {
     if (!booksLoaded) fetchBooks();
@@ -41,12 +42,41 @@ export function LibraryScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Distinct machines that have added at least one book with a real file path.
+  // A book with no path at all is visible regardless of which host is
+  // selected (there's nowhere for it to "belong" — see BooksGrid's filter).
+  const bookHosts = useMemo(
+    () => [...new Set(books.map((b) => b.hostname).filter((h): h is string => Boolean(h)))].sort(),
+    [books]
+  );
+  const filteredBooks = useMemo(
+    () => (hostFilter === 'all' ? books : books.filter((b) => !b.hostname || b.hostname === hostFilter)),
+    [books, hostFilter]
+  );
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
-          <p className="mt-1 text-sm text-muted">Books to read, videos to watch.</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
+            <p className="mt-1 text-sm text-muted">Books to read, videos to watch.</p>
+          </div>
+          {tab === 'books' && bookHosts.length > 1 && (
+            <Select
+              value={hostFilter}
+              onChange={(e) => setHostFilter(e.target.value)}
+              className="h-8 w-auto text-xs"
+              title="Filter books by which machine they were added from"
+            >
+              <option value="all">All hosts</option>
+              {bookHosts.map((h) => (
+                <option key={h} value={h}>
+                  {h}
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
         <Button onClick={() => (tab === 'books' ? setBookDialogOpen(true) : setVideoDialogOpen(true))}>
           <Plus size={16} />
@@ -70,7 +100,7 @@ export function LibraryScreen() {
       </div>
 
       {tab === 'books' ? (
-        <BooksGrid books={books} hostname={hostname} onEmptyAdd={() => setBookDialogOpen(true)} />
+        <BooksGrid books={filteredBooks} hostname={hostname} onEmptyAdd={() => setBookDialogOpen(true)} />
       ) : (
         <VideosGrid videos={videos} onEmptyAdd={() => setVideoDialogOpen(true)} />
       )}
@@ -131,10 +161,16 @@ function BooksGrid({ books, hostname, onEmptyAdd }: { books: Book[]; hostname: s
                 ) : (
                   <BookCoverFallback title={b.title} />
                 )}
-                {onOtherMachine && (
+                {!b.filePath ? (
                   <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
-                    <FileWarning size={11} /> on {b.hostname}
+                    <FileX size={11} /> No file linked
                   </div>
+                ) : (
+                  onOtherMachine && (
+                    <div className="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
+                      <FileWarning size={11} /> on {b.hostname}
+                    </div>
+                  )
                 )}
               </button>
               <div className="flex flex-1 flex-col gap-1.5 p-3">

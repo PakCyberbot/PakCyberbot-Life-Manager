@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, CheckSquare, Quote as QuoteIcon, Shuffle, Target, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, CheckSquare, Clock, Quote as QuoteIcon, Shuffle, Target, Wallet } from 'lucide-react';
 import {
   useCalendarStore,
   useGoalsStore,
@@ -7,10 +7,11 @@ import {
   useQuotesStore,
   useSettingsStore,
   useTasksStore,
+  useTimeTableStore,
   computeAccountBalance,
   pickRandomQuote,
 } from '@life-manager/core';
-import { formatCurrency, formatDate, isSameMonth } from '@life-manager/shared';
+import { DAY_NAMES, formatCurrency, formatDate, formatMinutes, isSameMonth, minutesBetween } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Badge } from '../components/ui/Badge';
@@ -31,6 +32,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const { accounts, transactions, fetchAll, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
   const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
+  const { schedules, slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
   const [quoteIndex, setQuoteIndex] = useState(0);
 
   useEffect(() => {
@@ -40,6 +42,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
     if (!moneyLoaded) fetchAll();
     if (!quotesLoaded) fetchQuotes();
     if (!settingsLoaded) loadSettings();
+    if (!timeTableLoaded) fetchTimeTable();
     setQuoteIndex(Math.floor(Math.random() * 1000));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -86,6 +89,16 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const netWorth = useMemo(
     () => accounts.reduce((sum, a) => sum + computeAccountBalance(a, transactions), 0),
     [accounts, transactions]
+  );
+
+  const todayDayOfWeek = today.getDay();
+  const todaySchedule = useMemo(() => schedules.find((s) => s.dayOfWeek === todayDayOfWeek), [schedules, todayDayOfWeek]);
+  const todaySlots = useMemo(
+    () =>
+      slots
+        .filter((s) => s.dayOfWeek === todayDayOfWeek)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [slots, todayDayOfWeek]
   );
 
   return (
@@ -196,6 +209,43 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5">
+            <CalendarClock size={15} className="text-accentCalendar" />
+            Today's Time Table — {DAY_NAMES[todayDayOfWeek]}
+          </CardTitle>
+          <button onClick={() => onNavigate('timeTable')} className="text-xs font-medium text-accentCalendar hover:underline">
+            Full Time Table →
+          </button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {todaySchedule && (
+            <p className="flex items-center gap-1.5 text-xs text-muted">
+              <Clock size={12} />
+              Awake {todaySchedule.wakeTime}–{todaySchedule.sleepTime} ({formatMinutes(minutesBetween(todaySchedule.wakeTime, todaySchedule.sleepTime))})
+            </p>
+          )}
+          {todaySlots.length === 0 ? (
+            <EmptyState title="Nothing scheduled today" description="Add time slots in Time Table to see today's plan here." />
+          ) : (
+            <div className="space-y-1.5">
+              {todaySlots.map((slot) => (
+                <div key={slot.id} className="flex items-center gap-3 rounded-xl bg-background px-3 py-2.5">
+                  <span className="w-24 shrink-0 text-xs text-muted">
+                    {slot.startTime}–{slot.endTime}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{slot.label}</p>
+                    {slot.notes && <p className="truncate text-xs text-muted">{slot.notes}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

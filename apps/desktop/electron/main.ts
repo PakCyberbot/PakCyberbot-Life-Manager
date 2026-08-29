@@ -232,6 +232,7 @@ app.whenReady().then(async () => {
     store!.update(table, id, patch)
   );
   ipcMain.handle('db:remove', (_e, table: string, id: string) => store!.remove(table, id));
+  ipcMain.handle('db:hardRemove', (_e, table: string, id: string) => store!.hardRemove(table, id));
 
   ipcMain.handle('settings:get', (_e, key: string) => store!.getSetting(key));
   ipcMain.handle('settings:set', (_e, key: string, value: string) => store!.setSetting(key, value));

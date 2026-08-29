@@ -69,7 +69,9 @@ export const useBooksStore = create<BooksState>((set, get) => ({
   },
 
   async removeBook(id) {
-    await getApi().db.remove('books', id);
+    // Hard delete, not soft: a book can carry a sizable data: URI cover image,
+    // and there's no "undo" value in keeping a deleted book's row around.
+    await getApi().db.hardRemove('books', id);
     set({ books: get().books.filter((b) => b.id !== id) });
   },
 

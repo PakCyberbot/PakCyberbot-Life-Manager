@@ -8,6 +8,7 @@ const api: LifeManagerApi = {
     create: (table, row) => ipcRenderer.invoke('db:create', table, row),
     update: (table, id, patch) => ipcRenderer.invoke('db:update', table, id, patch),
     remove: (table, id) => ipcRenderer.invoke('db:remove', table, id),
+    hardRemove: (table, id) => ipcRenderer.invoke('db:hardRemove', table, id),
   },
   settings: {
     get: (key) => ipcRenderer.invoke('settings:get', key),

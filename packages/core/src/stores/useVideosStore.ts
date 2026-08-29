@@ -58,7 +58,9 @@ export const useVideosStore = create<VideosState>((set, get) => ({
   },
 
   async removeVideo(id) {
-    await getApi().db.remove('videos', id);
+    // Hard delete, not soft: a video can carry a sizable data: URI thumbnail,
+    // and there's no "undo" value in keeping a deleted video's row around.
+    await getApi().db.hardRemove('videos', id);
     set({ videos: get().videos.filter((v) => v.id !== id) });
   },
 }));
