@@ -54,3 +54,32 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgb(var(--color-border)) transparent;
 }
+
+/* Native date/time inputs render Chromium's own calendar/clock picker, which
+   defaults to a light-only, black indicator icon — nearly invisible against a
+   dark-mode field. color-scheme tells Chromium which palette to draw the
+   native picker popup and indicator in, matching whichever theme is active
+   (see ThemeProvider, which toggles the .dark class on <html>). */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='time']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator,
+input[type='month']::-webkit-calendar-picker-indicator,
+input[type='week']::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 3px;
+}
+input[type='date']::-webkit-calendar-picker-indicator:hover,
+input[type='time']::-webkit-calendar-picker-indicator:hover,
+input[type='datetime-local']::-webkit-calendar-picker-indicator:hover,
+input[type='month']::-webkit-calendar-picker-indicator:hover,
+input[type='week']::-webkit-calendar-picker-indicator:hover {
+  background: rgb(var(--color-border));
+}
