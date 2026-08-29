@@ -28,7 +28,7 @@ const NAV_ITEMS: { id: ScreenId; label: string; icon: typeof LayoutDashboard; ac
   { id: 'calendar', label: 'Calendar', icon: CalendarDays, accent: 'text-accentCalendar' },
   { id: 'timeTable', label: 'Time Table', icon: CalendarClock, accent: 'text-accentCalendar' },
   { id: 'tasks', label: 'Tasks', icon: CheckSquare, accent: 'text-accentTasks' },
-  { id: 'money', label: 'Money', icon: Wallet, accent: 'text-accentMoney' },
+  { id: 'money', label: 'Savings', icon: Wallet, accent: 'text-accentMoney' },
   { id: 'library', label: 'Library', icon: Library, accent: 'text-accentLibrary' },
   { id: 'news', label: 'News & Updates', icon: Newspaper, accent: 'text-accentCalendar' },
   { id: 'entertainment', label: 'Entertainment', icon: Clapperboard, accent: 'text-accentLibrary' },

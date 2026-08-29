@@ -798,7 +798,7 @@ const SECTION_META: Record<ToggleableSectionId, { label: string; icon: typeof Ta
   calendar: { label: 'Calendar', icon: CalendarDays },
   timeTable: { label: 'Time Table', icon: CalendarClock },
   tasks: { label: 'Tasks', icon: CheckSquare },
-  money: { label: 'Money', icon: Wallet },
+  money: { label: 'Savings', icon: Wallet },
   library: { label: 'Library', icon: Library },
   news: { label: 'News & Updates', icon: Newspaper },
   entertainment: { label: 'Entertainment', icon: Clapperboard },

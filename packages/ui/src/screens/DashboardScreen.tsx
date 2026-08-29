@@ -8,7 +8,7 @@ import {
   useSettingsStore,
   useTasksStore,
   useTimeTableStore,
-  computeAccountBalance,
+  computeTotalSavings,
   pickRandomQuote,
 } from '@life-manager/core';
 import { DAY_NAMES, formatCurrency, formatDate, formatMinutes, isSameMonth, minutesBetween } from '@life-manager/shared';
@@ -29,7 +29,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const { goals, fetchGoals, loaded: goalsLoaded } = useGoalsStore();
   const { tasks, fetchTasks, loaded: tasksLoaded } = useTasksStore();
   const { events, fetchEvents, loaded: eventsLoaded } = useCalendarStore();
-  const { accounts, transactions, fetchAll, loaded: moneyLoaded } = useMoneyStore();
+  const { entries: savingsEntries, fetchAll, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
   const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
   const { schedules, slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
@@ -81,15 +81,12 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   );
 
   const netThisMonth = useMemo(() => {
-    return transactions
-      .filter((t) => isSameMonth(t.date, today))
-      .reduce((sum, t) => sum + (t.type === 'expense' ? -t.amount : t.amount), 0);
-  }, [transactions]);
+    return savingsEntries
+      .filter((e) => isSameMonth(e.date, today))
+      .reduce((sum, e) => sum + (e.type === 'expense' ? -e.amount : e.amount), 0);
+  }, [savingsEntries]);
 
-  const netWorth = useMemo(
-    () => accounts.reduce((sum, a) => sum + computeAccountBalance(a, transactions), 0),
-    [accounts, transactions]
-  );
+  const totalSavings = useMemo(() => computeTotalSavings(savingsEntries), [savingsEntries]);
 
   const todayDayOfWeek = today.getDay();
   const todaySchedule = useMemo(() => schedules.find((s) => s.dayOfWeek === todayDayOfWeek), [schedules, todayDayOfWeek]);
@@ -157,8 +154,8 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
         <StatCard
           icon={<Wallet size={16} />}
           accent="text-accentMoney bg-accentMoney/10"
-          label="Net worth"
-          value={formatCurrency(netWorth, defaultCurrency)}
+          label="Total savings"
+          value={formatCurrency(totalSavings, defaultCurrency)}
           sub={`${netThisMonth >= 0 ? '+' : ''}${formatCurrency(netThisMonth, defaultCurrency)} this month`}
           onClick={() => onNavigate('money')}
         />

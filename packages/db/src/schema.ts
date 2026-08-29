@@ -85,6 +85,33 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // Money was simplified from full accounts/transactions/budgets bookkeeping
+  // (still defined above, kept dormant rather than dropped — no destructive
+  // migration without the user's explicit say-so) to a single personal
+  // savings total + a wishlist, per the user's ask: they don't need
+  // full-fledged daily-expense tracking, just "what's my total" and "what am
+  // I saving toward." See structure.md's Money section.
+  `CREATE TABLE IF NOT EXISTS savingsEntries (
+    id TEXT PRIMARY KEY,
+    amount REAL NOT NULL,
+    type TEXT NOT NULL DEFAULT 'add',
+    note TEXT,
+    date TEXT NOT NULL,
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
+  `CREATE TABLE IF NOT EXISTS wishlistItems (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
+    estimatedCost REAL,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'planned',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
   // Generic cross-module linking table (structure.md's "linking/tags" system).
   // Not surfaced in the v1 UI yet, but the table exists so nothing needs
   // migrating when a later module starts writing to it.

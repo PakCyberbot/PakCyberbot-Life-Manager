@@ -68,7 +68,10 @@ export interface CalendarEvent extends BaseRow {
 }
 
 // ---------------------------------------------------------------------------
-// Money
+// Money — a personal savings total + a wishlist, not full bookkeeping.
+// (Account/Transaction/Budget below are the original accounts/transactions/
+// budgets model — kept as dormant types/tables, no longer surfaced in the
+// UI. See structure.md's Money section for why.)
 // ---------------------------------------------------------------------------
 
 export type AccountType = 'cash' | 'bank' | 'credit' | 'investment';
@@ -94,6 +97,26 @@ export interface Transaction extends BaseRow {
 export interface Budget extends BaseRow {
   category: string;
   monthlyLimit: number;
+}
+
+export type SavingsEntryType = 'add' | 'expense';
+
+export interface SavingsEntry extends BaseRow {
+  amount: number; // always positive; `type` determines sign
+  type: SavingsEntryType;
+  note?: string | null;
+  date: string; // ISO date
+}
+
+export type WishlistCategory = 'purchase' | 'trip' | 'subscription' | 'investment' | 'other';
+export type WishlistStatus = 'planned' | 'done' | 'cancelled';
+
+export interface WishlistItem extends BaseRow {
+  title: string;
+  category: WishlistCategory;
+  estimatedCost?: number | null;
+  notes?: string | null;
+  status: WishlistStatus;
 }
 
 // ---------------------------------------------------------------------------
