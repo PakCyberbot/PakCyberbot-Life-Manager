@@ -40,8 +40,13 @@ Other useful commands (see [CLAUDE.md](CLAUDE.md) for the full list and known go
 
 ```sh
 npm run typecheck   # TypeScript across the whole workspace
-npm run build       # electron-vite production build (no installer yet)
+npm run build       # electron-vite production build (out/ folder, not an installer)
+npm run dist        # builds a real Windows installer — see below
 ```
+
+### Building a Windows installer
+
+`npm run dist` produces `apps/desktop/release/PakCyberbot-Life-Manager-Setup-<version>.exe` — a normal NSIS installer (lets you pick the install location, adds a Start Menu shortcut). It's currently Windows-only and **unsigned** — there's no code-signing certificate for this project, so Windows SmartScreen will show an "unknown publisher" warning on first run; click "More info" → "Run anyway" to proceed. There's no auto-update wired up yet, so a new version means downloading and re-running the installer.
 
 ### Google Drive sync setup
 

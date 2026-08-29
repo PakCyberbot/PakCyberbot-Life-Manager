@@ -1,6 +1,6 @@
 # LIFE Manager — Planning Doc
 
-Status: **v1 desktop in progress** — Dashboard, Goals, Calendar, Tasks, and Money are scaffolded and running (see §11). This file is still the living architecture doc; edit freely as things evolve.
+Status: **v1 desktop running, first packaged installer built** — every module in §11 is implemented, and `npm run dist` produces a real Windows installer (unsigned, no auto-update yet). This file is still the living architecture doc; edit freely as things evolve.
 
 ## 1. Vision
 
@@ -375,3 +375,5 @@ One screen (`HealthScreen.tsx`), four tabs, one combined `useHealthStore` — a 
 Two build-time gotchas worth remembering if the package structure changes:
 - electron-vite's dev runner always expects `out/main/index.js` and `out/preload/index.js` — a custom Rollup `input` filename gets overridden back to `index.js` via `output.entryFileNames` in `electron.vite.config.ts`.
 - `externalizeDepsPlugin` only reads the **local** `package.json` (`apps/desktop/package.json`) to decide what to leave un-bundled — a runtime dependency declared only in a workspace package (like `sql.js` in `packages/db`) has to also be listed in `apps/desktop/package.json`, or it gets bundled incorrectly and breaks at runtime.
+
+**Packaging a real installer**: `npm run dist` (`electron-vite build` then `electron-builder --win`, config in `apps/desktop/package.json`'s `"build"` field) produces `apps/desktop/release/PakCyberbot-Life-Manager-Setup-<version>.exe` — a normal NSIS installer, unsigned (no code-signing cert — Windows SmartScreen will warn "unknown publisher"), Windows-only for now, no auto-update. Two things had to be fixed to get a packaged build that actually *runs* rather than just builds successfully (both only surfaced by launching the real output, not from the build logs): electron-builder needs `electronVersion` pinned explicitly in the config since the project's own `electron` dependency is a version range; and the window icon (`resources/icon.ico`) needed an `extraResources` entry + a packaged-path fallback in `main.ts` (`resolveIconPath()`) since its dev-mode relative path only resolves to a real file outside a packaged app's `asar` archive — the same two-path pattern `framework.md` already used. See CLAUDE.md's Packaging section for the full story.

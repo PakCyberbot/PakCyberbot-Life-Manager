@@ -62,6 +62,21 @@ function syncAiStatusFromLastCall(provider: AiProviderId) {
   }
 }
 
+// Same two-candidate resolution as readFrameworkFile() in ai/framework.ts, for
+// the same reason: a window icon loaded via BrowserWindow's `icon` option
+// needs a real path on disk, and __dirname's "../../resources/icon.ico"
+// traversal only reaches a real file in dev — inside a packaged app it
+// resolves to a path still nested inside the virtual asar namespace, where
+// native icon-loading can silently fail (confirmed live: "Failed to load
+// image from path ...app.asar\resources\icon.ico" the first time this was
+// packaged). The electron-builder "extraResources" entry for resources/
+// copies the real file to process.resourcesPath/resources/icon.ico instead.
+function resolveIconPath(): string {
+  const packaged = path.join(process.resourcesPath ?? '', 'resources', 'icon.ico');
+  if (fs.existsSync(packaged)) return packaged;
+  return path.join(__dirname, '../../resources/icon.ico');
+}
+
 async function createWindow() {
   const win = new BrowserWindow({
     width: 1320,
@@ -69,7 +84,7 @@ async function createWindow() {
     minWidth: 980,
     minHeight: 640,
     backgroundColor: '#0f0f14',
-    icon: path.join(__dirname, '../../resources/icon.ico'),
+    icon: resolveIconPath(),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
@@ -134,7 +149,7 @@ function openBookInAppWindow(input: { id: string; filePath: string; page: number
     width: 900,
     height: 1000,
     backgroundColor: '#525659',
-    icon: path.join(__dirname, '../../resources/icon.ico'),
+    icon: resolveIconPath(),
     webPreferences: {
       plugins: true, // enables Chromium's built-in PDF viewer for file:// PDFs
       contextIsolation: true,
