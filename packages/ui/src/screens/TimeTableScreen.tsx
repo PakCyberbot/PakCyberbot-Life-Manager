@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Clock, Plus, Sunrise, Sunset, Trash2 } from 'lucide-react';
+import { Clock, Copy, LayoutList, Pencil, Plus, Sunrise, Sunset, Trash2, Watch } from 'lucide-react';
 import { useTimeTableStore } from '@life-manager/core';
-import { DAY_NAMES, formatMinutes, minutesBetween } from '@life-manager/shared';
+import { DAY_NAMES, formatMinutes, minutesBetween, type TimeSlot } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
 import { Field, Input, Textarea } from '../components/ui/FormControls';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { EmptyState } from '../components/ui/EmptyState';
+import { TimeTableClock } from '../components/timetable/ClockView';
 import clsx from 'clsx';
 
 const SLOT_COLORS: { value: string; className: string }[] = [
@@ -22,11 +23,17 @@ function colorClass(color: string) {
   return SLOT_COLORS.find((c) => c.value === color)?.className ?? 'bg-accentCalendar';
 }
 
+type View = 'list' | 'clock';
+
 export function TimeTableScreen() {
-  const { schedules, slots, fetchAll, updateSchedule, applyScheduleToDays, addSlot, removeSlot, loaded } = useTimeTableStore();
+  const { schedules, slots, fetchAll, updateSchedule, applyScheduleToDays, addSlot, updateSlot, removeSlot, cloneSlotToDays, loaded } =
+    useTimeTableStore();
   const [dayOfWeek, setDayOfWeek] = useState(() => new Date().getDay());
+  const [view, setView] = useState<View>('list');
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
+  const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
+  const [cloningSlot, setCloningSlot] = useState<TimeSlot | null>(null);
 
   useEffect(() => {
     if (!loaded) fetchAll();
@@ -113,9 +120,33 @@ export function TimeTableScreen() {
       <Card>
         <CardHeader>
           <CardTitle>Schedule — {DAY_NAMES[dayOfWeek]}</CardTitle>
-          <Button size="sm" onClick={() => setSlotDialogOpen(true)}>
-            <Plus size={14} /> Add slot
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+              <button
+                onClick={() => setView('list')}
+                title="List view"
+                className={clsx(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'list' ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <LayoutList size={13} /> List
+              </button>
+              <button
+                onClick={() => setView('clock')}
+                title="Clock view"
+                className={clsx(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  view === 'clock' ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <Watch size={13} /> Clock
+              </button>
+            </div>
+            <Button size="sm" onClick={() => setSlotDialogOpen(true)}>
+              <Plus size={14} /> Add slot
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {daySlots.length === 0 ? (
@@ -129,6 +160,8 @@ export function TimeTableScreen() {
                 </Button>
               }
             />
+          ) : view === 'clock' ? (
+            <TimeTableClock schedule={schedule} slots={daySlots} />
           ) : (
             <div className="space-y-1.5">
               {daySlots.map((slot) => (
@@ -141,6 +174,12 @@ export function TimeTableScreen() {
                     <p className="truncate text-sm font-medium">{slot.label}</p>
                     {slot.notes && <p className="truncate text-xs text-muted">{slot.notes}</p>}
                   </div>
+                  <button onClick={() => setCloningSlot(slot)} title="Clone to other days" className="shrink-0 text-muted hover:text-foreground">
+                    <Copy size={13} />
+                  </button>
+                  <button onClick={() => setEditingSlot(slot)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
+                    <Pencil size={13} />
+                  </button>
                   <button onClick={() => removeSlot(slot.id)} className="shrink-0 text-muted hover:text-red-500">
                     <Trash2 size={13} />
                   </button>
@@ -161,11 +200,44 @@ export function TimeTableScreen() {
           onApply={(days) => applyScheduleToDays(days, schedule.wakeTime, schedule.sleepTime)}
         />
       )}
-      <NewSlotDialog
+      <SlotDialog
         open={slotDialogOpen}
         onClose={() => setSlotDialogOpen(false)}
         onCreate={(startTime, endTime, label, notes, color) => addSlot(dayOfWeek, startTime, endTime, label, notes, color)}
       />
+      {editingSlot && (
+        <SlotDialog
+          open
+          slot={editingSlot}
+          onClose={() => setEditingSlot(null)}
+          onCreate={() => {}}
+          onUpdate={(patch) => updateSlot(editingSlot.id, patch)}
+        />
+      )}
+      {cloningSlot && (
+        <CloneSlotDialog
+          open
+          onClose={() => setCloningSlot(null)}
+          currentDay={dayOfWeek}
+          slotLabel={cloningSlot.label}
+          onClone={(days) => cloneSlotToDays(cloningSlot.id, days)}
+        />
+      )}
+    </div>
+  );
+}
+
+function DayMultiSelect({ currentDay, selected, onToggle }: { currentDay: number; selected: Set<number>; onToggle: (day: number) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {DAY_NAMES.map((name, i) =>
+        i === currentDay ? null : (
+          <label key={name} className="flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm">
+            <input type="checkbox" checked={selected.has(i)} onChange={() => onToggle(i)} className="h-4 w-4 rounded border-border" />
+            {name}
+          </label>
+        )
+      )}
     </div>
   );
 }
@@ -203,16 +275,7 @@ function ApplyToDaysDialog({
   return (
     <Dialog open={open} onClose={onClose} title={`Apply ${wakeTime}–${sleepTime} to…`}>
       <div className="space-y-3">
-        <div className="grid grid-cols-2 gap-1.5">
-          {DAY_NAMES.map((name, i) =>
-            i === currentDay ? null : (
-              <label key={name} className="flex items-center gap-2 rounded-lg bg-background px-3 py-2 text-sm">
-                <input type="checkbox" checked={selected.has(i)} onChange={() => toggle(i)} className="h-4 w-4 rounded border-border" />
-                {name}
-              </label>
-            )
-          )}
-        </div>
+        <DayMultiSelect currentDay={currentDay} selected={selected} onToggle={toggle} />
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
@@ -226,31 +289,85 @@ function ApplyToDaysDialog({
   );
 }
 
-function NewSlotDialog({
+function CloneSlotDialog({
   open,
   onClose,
-  onCreate,
+  currentDay,
+  slotLabel,
+  onClone,
 }: {
   open: boolean;
   onClose: () => void;
-  onCreate: (startTime: string, endTime: string, label: string, notes: string | null, color: string) => void;
+  currentDay: number;
+  slotLabel: string;
+  onClone: (days: number[]) => void;
 }) {
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('10:00');
-  const [label, setLabel] = useState('');
-  const [notes, setNotes] = useState('');
-  const [color, setColor] = useState('blue');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggle = (day: number) => {
+    const next = new Set(selected);
+    next.has(day) ? next.delete(day) : next.add(day);
+    setSelected(next);
+  };
+
+  const submit = () => {
+    if (selected.size === 0) return;
+    onClone([...selected]);
+    setSelected(new Set());
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title={`Clone "${slotLabel}" to…`}>
+      <div className="space-y-3">
+        <DayMultiSelect currentDay={currentDay} selected={selected} onToggle={toggle} />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={selected.size === 0}>
+            Clone
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function SlotDialog({
+  open,
+  onClose,
+  slot,
+  onCreate,
+  onUpdate,
+}: {
+  open: boolean;
+  onClose: () => void;
+  slot?: TimeSlot;
+  onCreate: (startTime: string, endTime: string, label: string, notes: string | null, color: string) => void;
+  onUpdate?: (patch: { startTime: string; endTime: string; label: string; notes: string | null; color: string }) => void;
+}) {
+  const isEditing = !!slot;
+  const [startTime, setStartTime] = useState(slot?.startTime ?? '09:00');
+  const [endTime, setEndTime] = useState(slot?.endTime ?? '10:00');
+  const [label, setLabel] = useState(slot?.label ?? '');
+  const [notes, setNotes] = useState(slot?.notes ?? '');
+  const [color, setColor] = useState(slot?.color ?? 'blue');
 
   const submit = () => {
     if (!label.trim()) return;
-    onCreate(startTime, endTime, label.trim(), notes.trim() || null, color);
+    if (isEditing && onUpdate) {
+      onUpdate({ startTime, endTime, label: label.trim(), notes: notes.trim() || null, color });
+    } else {
+      onCreate(startTime, endTime, label.trim(), notes.trim() || null, color);
+    }
     setLabel('');
     setNotes('');
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="New time slot">
+    <Dialog open={open} onClose={onClose} title={isEditing ? 'Edit time slot' : 'New time slot'}>
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Start">
@@ -283,7 +400,7 @@ function NewSlotDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!label.trim()}>
-            Add slot
+            {isEditing ? 'Save changes' : 'Add slot'}
           </Button>
         </div>
       </div>

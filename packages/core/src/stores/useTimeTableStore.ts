@@ -14,6 +14,8 @@ interface TimeTableState {
   addSlot: (dayOfWeek: number, startTime: string, endTime: string, label: string, notes: string | null, color: string) => Promise<void>;
   updateSlot: (id: string, patch: Partial<TimeSlot>) => Promise<void>;
   removeSlot: (id: string) => Promise<void>;
+  /** Copies one slot's time/label/notes/color onto the same time on each day in `days` — "clone to other days." */
+  cloneSlotToDays: (slotId: string, days: number[]) => Promise<void>;
 }
 
 export const useTimeTableStore = create<TimeTableState>((set, get) => ({
@@ -69,5 +71,13 @@ export const useTimeTableStore = create<TimeTableState>((set, get) => ({
   async removeSlot(id) {
     await getApi().db.remove('timeSlots', id);
     set({ slots: get().slots.filter((s) => s.id !== id) });
+  },
+
+  async cloneSlotToDays(slotId, days) {
+    const source = get().slots.find((s) => s.id === slotId);
+    if (!source) return;
+    await Promise.all(
+      days.map((d) => get().addSlot(d, source.startTime, source.endTime, source.label, source.notes ?? null, source.color))
+    );
   },
 }));
