@@ -96,14 +96,30 @@ export function createDriveSync(store: ElectronDataStore) {
         resolve(result);
       };
 
+      // Captured once, when the server starts listening, and reused for both
+      // the authorization request AND the token exchange — they must be
+      // byte-for-byte identical or Google rejects the exchange. Previously
+      // this was *recomputed* from server.address() inside the request
+      // handler, after server.close() had already been called; Node nulls
+      // the server's internal handle synchronously inside close(), so
+      // address() then returns null and the port silently fell back to 0
+      // (`http://127.0.0.1:0/`) — a redirect_uri that could never match,
+      // so the exchange failed even though the browser had already shown
+      // "Connected" (that response is sent before the mismatched exchange
+      // ever runs). Confirmed live: the browser reached the success page,
+      // but the app never picked up a refresh token.
+      let redirectUri = '';
+
       const server = http.createServer(async (req, res) => {
         try {
           const url = new URL(req.url ?? '/', 'http://127.0.0.1');
           const errorParam = url.searchParams.get('error');
           const code = url.searchParams.get('code');
 
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+
           if (errorParam) {
-            res.end('<html><body>Sign-in was cancelled. You can close this tab.</body></html>');
+            res.end('<html><head><meta charset="utf-8"></head><body>Sign-in was cancelled. You can close this tab.</body></html>');
             server.close();
             finish({ ok: false, error: 'Sign-in was cancelled.' });
             return;
@@ -113,12 +129,10 @@ export function createDriveSync(store: ElectronDataStore) {
             return;
           }
 
-          res.end('<html><body>Connected — you can close this tab and return to the app.</body></html>');
+          res.end(
+            '<html><head><meta charset="utf-8"></head><body>Connected — you can close this tab and return to the app.</body></html>'
+          );
           server.close();
-
-          const address = server.address();
-          const port = typeof address === 'object' && address ? address.port : 0;
-          const redirectUri = `http://127.0.0.1:${port}/`;
 
           const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
@@ -168,7 +182,7 @@ export function createDriveSync(store: ElectronDataStore) {
       server.listen(0, '127.0.0.1', () => {
         const address = server.address();
         const port = typeof address === 'object' && address ? address.port : 0;
-        const redirectUri = `http://127.0.0.1:${port}/`;
+        redirectUri = `http://127.0.0.1:${port}/`;
 
         const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
         authUrl.searchParams.set('client_id', clientId);
