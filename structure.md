@@ -240,16 +240,25 @@ Tasks were originally their own sidebar screen; per a later ask, they moved into
 
 Money was simplified, per a later ask: daily-expense bookkeeping (separate accounts, per-transaction categorization, monthly budgets) was more machinery than wanted — what's actually useful is "what's my total" and "what am I saving toward." `savingsEntries` (amount + `add`/`expense` + date + optional note) replaces accounts/transactions; the total is just their signed sum (`computeTotalSavings`). `wishlistItems` (title, category — purchase/trip/subscription/investment/other —, estimated cost, status) is the "what am I saving toward" half, editable/removable, with a running total of everything still `planned`. The original `accounts`/`transactions`/`budgets` tables and types are kept **dormant** in the schema (not dropped) rather than risking a destructive migration without the user's explicit say-so — nothing in the UI reads/writes them anymore. The sidebar label is "Savings"; the internal `ToggleableSectionId`/screen id stayed `money` to avoid an unnecessary rename across Settings/Sidebar/App routing.
 
-### Google Drive sync — implemented, needs your Google credentials to activate
+### Google Drive sync — implemented and verified working end-to-end
 
-Settings now has a real **Push to Drive** / **Pull from Drive** pair, not a placeholder. How it works:
+Settings has a real **Push to Drive** / **Pull from Drive** pair, not a placeholder — live-tested through a full connect → push cycle, which is how the two bugs below were actually found (both looked like success at first glance; see CLAUDE.md's Google Drive sync section for the full diagnosis). How it works:
 
 - **Scope**: `drive.file` — the app can only ever see files/folders *it* creates, never the rest of your Drive. This matters practically: broader scopes require Google to review/verify the app before it'll work for anyone but you in "testing" mode; `drive.file` avoids that entirely, which is exactly what a personal single-user app wants.
 - **Push**: finds-or-creates a folder literally named "PakCyberbot Life Manager" in your Drive root, then creates or overwrites `life-manager.sqlite` inside it.
 - **Pull**: downloads that file and overwrites the local DB — after confirming with you first, since it discards anything added locally since the last push. On success, the app relaunches itself (`app.relaunch()` + `app.exit()`, which skips the normal shutdown flush, so the just-pulled file can't get overwritten by stale in-memory data) so every cache — the DB and all the Zustand stores — reloads clean from the pulled file, rather than trying to hot-patch a dozen different in-memory caches individually.
 - **Auth**: the standard installed-app OAuth loopback flow (RFC 8252) — a temporary `127.0.0.1` server catches Google's redirect after you approve access in your normal browser, no embedded webview. Refresh token stored in the local `settings` table.
 - **Implementation**: plain `fetch` calls against the Drive v3 REST API and Google's OAuth token endpoint (`apps/desktop/electron/driveSync.ts`) — deliberately not the `googleapis` SDK, which is tens of MB for the handful of calls this needs.
-- **What you still need to do**: paste a Google OAuth "Desktop app" Client ID + Secret into Settings once — see the setup steps in chat. Nothing here can be tested end-to-end without that; it's a genuine external dependency, not a code gap.
+
+**One-time setup, in full** (this used to just say "see the setup steps in chat" — inlined here instead, since a chat transcript isn't documentation anyone can come back to):
+
+1. [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → create/select a project.
+2. **APIs & Services → Library** → enable the **Google Drive API**.
+3. **APIs & Services → OAuth consent screen** → User type **External** → fill in the required fields → add your own Google account under **Test users** (the app stays in "Testing" status; unverified apps cap out at 100 named testers, which is exactly what a personal app needs).
+4. Still on the consent screen: **Edit app → Scopes → Add or remove scopes** → add `https://www.googleapis.com/auth/drive.file` (plus `openid` and `.../auth/userinfo.email` if not already present) → save. **This step is easy to miss and silently breaks Push/Pull later** — requesting a scope in the authorization URL is not enough by itself; Google only actually grants a scope that's also registered here, and drops anything else without an error at consent time. The symptom shows up downstream instead, as `403 insufficient authentication scopes` on the first Push.
+5. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → Application type **Desktop app** (not "Web application" — that type requires pre-registering an exact redirect URI, and this app's loopback server binds a fresh random port every time, so there'd be nothing fixed to register; "Desktop app" clients skip that field entirely and Google permits any `http://127.0.0.1:<port>` redirect for them under RFC 8252).
+6. Copy the **Client ID** and **Client Secret** into Settings → Google Drive sync, then **Connect Google Drive**. Expect an "unverified app" warning in the browser (the app isn't published/verified) — click **Advanced → Go to [app name] (unsafe)** to proceed; this is normal for a personal, unpublished OAuth app.
+7. If you registered the `drive.file` scope *after* already connecting once, **Disconnect then Connect again** — refreshing an existing token can never grant it a scope it wasn't issued with originally; only a fresh consent screen visit can.
 
 ### Local backup — export/import, no Google account needed
 

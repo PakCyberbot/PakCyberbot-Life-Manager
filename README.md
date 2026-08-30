@@ -2,7 +2,7 @@
 
 A local-first, cross-platform personal life management app — goals (with tasks built in), calendar, personal savings, a book/video library, and life quotes, all in one place. Desktop-first (Electron), with mobile/web planned via the same shared codebase.
 
-**Status**: v1 desktop build, actively developed.
+**Status**: v0.2.0 — every module below is built, a Windows installer is available (see Releases), and Google Drive sync has been verified end-to-end.
 
 ## Features
 
@@ -55,8 +55,10 @@ Sync is built in but needs your own free Google OAuth credential — there's no 
 1. [console.cloud.google.com](https://console.cloud.google.com) → new project
 2. **APIs & Services → Library** → enable "Google Drive API"
 3. **APIs & Services → OAuth consent screen** → External → fill in the basics → add yourself as a test user
-4. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → type **Desktop app**
-5. Paste the resulting Client ID + Secret into the app's Settings → Google Drive sync → Connect
+4. Still on the consent screen: **Edit app → Scopes → Add or remove scopes** → add `https://www.googleapis.com/auth/drive.file` (plus `openid`/`.../auth/userinfo.email` if not already listed) → save. **Don't skip this** — requesting the scope in the app itself isn't enough; Google only grants a scope that's also registered here, and silently drops anything else. Skipping it surfaces later as `403 insufficient authentication scopes` on your first Push.
+5. **APIs & Services → Credentials → Create Credentials → OAuth client ID** → type **Desktop app** (not "Web application" — that type needs a fixed, pre-registered redirect URI, and this app's redirect port changes every time)
+6. Paste the resulting Client ID + Secret into the app's Settings → Google Drive sync → Connect. Expect an "unverified app" browser warning — click **Advanced → Go to [app name] (unsafe)**, which is normal for a personal, unpublished app
+7. If you add the `drive.file` scope *after* already connecting once, click **Disconnect** then **Connect** again — an existing token can't gain a new scope just by refreshing it
 
 ## Project structure
 

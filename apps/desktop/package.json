@@ -1,7 +1,7 @@
 {
   "name": "@life-manager/desktop",
   "productName": "PakCyberbot Life Manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local-first personal life management app — goals, calendar, savings, a book/video library, and more.",
   "author": "PakCyberbot",
   "private": true,
