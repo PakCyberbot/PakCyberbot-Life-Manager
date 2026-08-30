@@ -5,6 +5,8 @@ import {
   ExternalLink,
   FileWarning,
   FolderOpen,
+  Link2,
+  Pencil,
   Play,
   Plus,
   Target,
@@ -20,7 +22,7 @@ import {
   useVideosStore,
 } from '@life-manager/core';
 import { formatDate, type Goal, type GoalStatus, type GoalType, type Task, type TaskLinkType, type TaskPriority } from '@life-manager/shared';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
+import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
 import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
@@ -207,16 +209,29 @@ function GoalDetailDialog({
   onNavigate: (s: ScreenId) => void;
 }) {
   const { byGoalId, fetchForGoal, addMilestone, toggleMilestone, removeMilestone } = useMilestonesStore();
-  const { tasks, addTask, setStatus, removeTask } = useTasksStore();
+  const { tasks, addTask, updateTask, setStatus, removeTask } = useTasksStore();
   const milestones = byGoalId[goal.id] ?? [];
   const goalTasks = tasks.filter((t) => t.linkedGoalId === goal.id);
   const [newMilestone, setNewMilestone] = useState('');
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [hostname, setHostname] = useState<string | null>(null);
+
+  // Editable goal fields — local state so typing doesn't fight the parent's
+  // `goals.find(...)` object identity, resynced only when switching to a
+  // different goal (not on every field commit).
+  const [title, setTitle] = useState(goal.title);
+  const [description, setDescription] = useState(goal.description ?? '');
+  const [category, setCategory] = useState(goal.category ?? '');
+  const [targetDate, setTargetDate] = useState(goal.targetDate ?? '');
 
   useEffect(() => {
     fetchForGoal(goal.id);
     getApi().system.hostname().then(setHostname);
+    setTitle(goal.title);
+    setDescription(goal.description ?? '');
+    setCategory(goal.category ?? '');
+    setTargetDate(goal.targetDate ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [goal.id]);
 
@@ -233,6 +248,8 @@ function GoalDetailDialog({
     } else if (task.linkType === 'video' && task.linkTargetId) {
       useUiFocusStore.getState().setLibraryFocus({ type: 'video', id: task.linkTargetId });
       onNavigate('library');
+    } else if (task.linkType === 'url' && task.linkPath) {
+      getApi().system.openExternal(task.linkPath);
     } else if (task.linkPath) {
       getApi().system.openLocalPath(task.linkPath);
     }
@@ -241,6 +258,55 @@ function GoalDetailDialog({
   return (
     <Dialog open onClose={onClose} title={goal.title} className="max-w-xl">
       <div className="space-y-4">
+        <Field label="Title">
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onBlur={() => title.trim() && title !== goal.title && onUpdate(goal.id, { title: title.trim() })}
+          />
+        </Field>
+        <Field label="Description">
+          <Textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            onBlur={() => {
+              const next = description.trim() || null;
+              if (next !== (goal.description ?? null)) onUpdate(goal.id, { description: next });
+            }}
+            placeholder="Optional details"
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Category">
+            <Input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              onBlur={() => {
+                const next = category.trim() || null;
+                if (next !== (goal.category ?? null)) onUpdate(goal.id, { category: next });
+              }}
+              placeholder="e.g. Career"
+            />
+          </Field>
+          <Field label="Type">
+            <Select value={goal.type} onChange={(e) => onUpdate(goal.id, { type: e.target.value as GoalType })}>
+              <option value="short-term">Short-term</option>
+              <option value="long-term">Long-term</option>
+              <option value="okr">OKR</option>
+            </Select>
+          </Field>
+        </div>
+        <Field label="Target date">
+          <Input
+            type="date"
+            value={targetDate}
+            onChange={(e) => {
+              setTargetDate(e.target.value);
+              onUpdate(goal.id, { targetDate: e.target.value || null });
+            }}
+          />
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Status">
             <Select value={goal.status} onChange={(e) => onUpdate(goal.id, { status: e.target.value as GoalStatus })}>
@@ -256,8 +322,12 @@ function GoalDetailDialog({
               min={0}
               max={100}
               value={goal.progressPct}
+              disabled={milestones.length > 0}
               onChange={(e) => onUpdate(goal.id, { progressPct: Number(e.target.value) })}
             />
+            {milestones.length > 0 && (
+              <p className="mt-1 text-[11px] text-muted">Auto-computed from milestones checked off below</p>
+            )}
           </Field>
         </div>
 
@@ -303,7 +373,7 @@ function GoalDetailDialog({
           </div>
           {goalTasks.length === 0 ? (
             <p className="rounded-lg bg-background px-3 py-2.5 text-xs text-muted">
-              No tasks yet — break this goal into steps, optionally linked to a file, folder, book, or video.
+              No tasks yet — break this goal into steps, optionally linked to a file, folder, web link, book, or video.
             </p>
           ) : (
             <div className="space-y-1.5">
@@ -340,7 +410,9 @@ function GoalDetailDialog({
                             ? `Only available on ${t.linkHostname}`
                             : t.linkType === 'book' || t.linkType === 'video'
                               ? 'Open in Library'
-                              : 'Open'
+                              : t.linkType === 'url'
+                                ? 'Open link'
+                                : 'Open'
                         }
                         className={clsx(
                           'shrink-0',
@@ -353,11 +425,16 @@ function GoalDetailDialog({
                           <BookOpen size={14} />
                         ) : t.linkType === 'video' ? (
                           <Play size={14} />
+                        ) : t.linkType === 'url' ? (
+                          <Link2 size={14} />
                         ) : (
                           <ExternalLink size={14} />
                         )}
                       </button>
                     )}
+                    <button onClick={() => setEditingTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
+                      <Pencil size={13} />
+                    </button>
                     <button onClick={() => removeTask(t.id)} className="shrink-0 text-muted hover:text-red-500">
                       <Trash2 size={13} />
                     </button>
@@ -378,34 +455,62 @@ function GoalDetailDialog({
         </div>
       </div>
 
-      <NewTaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} goal={goal} onCreate={addTask} />
+      <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} goal={goal} onCreate={addTask} />
+      {editingTask && (
+        <TaskDialog
+          open
+          onClose={() => setEditingTask(null)}
+          goal={goal}
+          task={editingTask}
+          onCreate={addTask}
+          onUpdate={updateTask}
+        />
+      )}
     </Dialog>
   );
 }
 
-type LinkMode = 'none' | 'path' | 'book' | 'video';
+type LinkMode = 'none' | 'path' | 'book' | 'video' | 'url';
 
-function NewTaskDialog({
+function TaskDialog({
   open,
   onClose,
   goal,
+  task,
   onCreate,
+  onUpdate,
 }: {
   open: boolean;
   onClose: () => void;
   goal: Goal;
+  /** When present, edits this existing task instead of creating a new one. */
+  task?: Task;
   onCreate: ReturnType<typeof useTasksStore.getState>['addTask'];
+  onUpdate?: ReturnType<typeof useTasksStore.getState>['updateTask'];
 }) {
   const { books, fetchBooks, loaded: booksLoaded, updateBook } = useBooksStore();
   const { videos, fetchVideos, loaded: videosLoaded, updateVideo } = useVideosStore();
-  const [title, setTitle] = useState('');
-  const [notes, setNotes] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [linkMode, setLinkMode] = useState<LinkMode>('none');
-  const [pickedPath, setPickedPath] = useState<{ path: string; isFolder: boolean } | null>(null);
-  const [selectedBookId, setSelectedBookId] = useState('');
-  const [selectedVideoId, setSelectedVideoId] = useState('');
+  const isEditing = !!task;
+
+  const linkModeFor = (t?: Task): LinkMode => {
+    if (!t?.linkType) return 'none';
+    if (t.linkType === 'file' || t.linkType === 'folder') return 'path';
+    return t.linkType;
+  };
+
+  const [title, setTitle] = useState(task?.title ?? '');
+  const [notes, setNotes] = useState(task?.notes ?? '');
+  const [dueDate, setDueDate] = useState(task?.dueDate ?? '');
+  const [priority, setPriority] = useState<TaskPriority>(task?.priority ?? 'medium');
+  const [linkMode, setLinkMode] = useState<LinkMode>(linkModeFor(task));
+  const [pickedPath, setPickedPath] = useState<{ path: string; isFolder: boolean } | null>(
+    task?.linkPath && (task.linkType === 'file' || task.linkType === 'folder')
+      ? { path: task.linkPath, isFolder: task.linkType === 'folder' }
+      : null
+  );
+  const [url, setUrl] = useState(task?.linkType === 'url' ? (task.linkPath ?? '') : '');
+  const [selectedBookId, setSelectedBookId] = useState(task?.linkType === 'book' ? (task.linkTargetId ?? '') : '');
+  const [selectedVideoId, setSelectedVideoId] = useState(task?.linkType === 'video' ? (task.linkTargetId ?? '') : '');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -432,6 +537,7 @@ function NewTaskDialog({
     setPriority('medium');
     setLinkMode('none');
     setPickedPath(null);
+    setUrl('');
     setSelectedBookId('');
     setSelectedVideoId('');
   };
@@ -449,6 +555,9 @@ function NewTaskDialog({
       linkType = pickedPath.isFolder ? 'folder' : 'file';
       linkPath = pickedPath.path;
       linkHostname = await getApi().system.hostname();
+    } else if (linkMode === 'url' && url.trim()) {
+      linkType = 'url';
+      linkPath = url.trim();
     } else if (linkMode === 'book' && selectedBookId) {
       linkType = 'book';
       linkTargetId = selectedBookId;
@@ -460,31 +569,36 @@ function NewTaskDialog({
       await updateVideo(selectedVideoId, { category: goal.title });
     }
 
-    await onCreate({
+    const payload = {
       title: title.trim(),
       notes: notes.trim() || null,
       dueDate: dueDate || null,
       priority,
-      linkedGoalId: goal.id,
       linkType,
       linkPath,
       linkHostname,
       linkTargetId,
-    });
+    };
+
+    if (isEditing && task && onUpdate) {
+      await onUpdate(task.id, payload);
+    } else {
+      await onCreate({ ...payload, linkedGoalId: goal.id });
+    }
     setSubmitting(false);
     reset();
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title={`New task — ${goal.title}`}>
+    <Dialog open={open} onClose={onClose} title={isEditing ? `Edit task — ${goal.title}` : `New task — ${goal.title}`}>
       <div className="space-y-3">
         <Field label="Title">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Draft the outline" autoFocus />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Due date (optional)">
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <Input type="date" value={dueDate ?? ''} onChange={(e) => setDueDate(e.target.value)} />
           </Field>
           <Field label="Priority">
             <Select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
@@ -495,7 +609,7 @@ function NewTaskDialog({
           </Field>
         </div>
         <Field label="Notes (optional)">
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <Textarea value={notes ?? ''} onChange={(e) => setNotes(e.target.value)} />
         </Field>
 
         <Field label="Link (optional)">
@@ -508,6 +622,7 @@ function NewTaskDialog({
           >
             <option value="none">None</option>
             <option value="path">File or folder on this machine</option>
+            <option value="url">Web URL</option>
             <option value="book">Book from Library</option>
             <option value="video">Video from Library</option>
           </Select>
@@ -520,6 +635,9 @@ function NewTaskDialog({
               <FolderOpen size={14} /> Browse
             </Button>
           </div>
+        )}
+        {linkMode === 'url' && (
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />
         )}
         {linkMode === 'book' &&
           (books.length === 0 ? (
@@ -556,7 +674,7 @@ function NewTaskDialog({
             Cancel
           </Button>
           <Button onClick={submit} disabled={!title.trim() || submitting}>
-            {submitting ? 'Adding…' : 'Add task'}
+            {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add task'}
           </Button>
         </div>
       </div>

@@ -1,12 +1,11 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CalendarDays, CheckSquare, Clock, Quote as QuoteIcon, Shuffle, Target, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, Quote as QuoteIcon, Shuffle, Target, Wallet } from 'lucide-react';
 import {
   useCalendarStore,
   useGoalsStore,
   useMoneyStore,
   useQuotesStore,
   useSettingsStore,
-  useTasksStore,
   useTimeTableStore,
   computeTotalSavings,
   pickRandomQuote,
@@ -27,7 +26,6 @@ const greetingFor = (hour: number) => {
 
 export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }) {
   const { goals, fetchGoals, loaded: goalsLoaded } = useGoalsStore();
-  const { tasks, fetchTasks, loaded: tasksLoaded } = useTasksStore();
   const { events, fetchEvents, loaded: eventsLoaded } = useCalendarStore();
   const { entries: savingsEntries, fetchAll, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
@@ -37,7 +35,6 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
 
   useEffect(() => {
     if (!goalsLoaded) fetchGoals();
-    if (!tasksLoaded) fetchTasks();
     if (!eventsLoaded) fetchEvents();
     if (!moneyLoaded) fetchAll();
     if (!quotesLoaded) fetchQuotes();
@@ -58,17 +55,6 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const avgProgress = useMemo(
     () => (activeGoals.length ? Math.round(activeGoals.reduce((s, g) => s + g.progressPct, 0) / activeGoals.length) : 0),
     [activeGoals]
-  );
-
-  const openTasks = useMemo(() => tasks.filter((t) => t.status !== 'done'), [tasks]);
-  const dueTodayTasks = useMemo(
-    () =>
-      openTasks.filter((t) => {
-        if (!t.dueDate) return false;
-        const d = new Date(t.dueDate);
-        return d.toDateString() === today.toDateString() || d < today;
-      }),
-    [openTasks]
   );
 
   const upcomingEvents = useMemo(
@@ -126,21 +112,13 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={<Target size={16} />}
           accent="text-accentGoals bg-accentGoals/10"
           label="Active goals"
           value={String(activeGoals.length)}
           sub={activeGoals.length ? `${avgProgress}% avg. progress` : 'None yet'}
-          onClick={() => onNavigate('goals')}
-        />
-        <StatCard
-          icon={<CheckSquare size={16} />}
-          accent="text-accentTasks bg-accentTasks/10"
-          label="Due today / overdue"
-          value={String(dueTodayTasks.length)}
-          sub={`${openTasks.length} open total`}
           onClick={() => onNavigate('goals')}
         />
         <StatCard

@@ -43,7 +43,7 @@ export interface Milestone extends BaseRow {
 export type TaskPriority = 'low' | 'medium' | 'high';
 export type TaskStatus = 'todo' | 'in-progress' | 'done';
 /** What a task's optional single link points at: a local path, or a Library item. */
-export type TaskLinkType = 'file' | 'folder' | 'book' | 'video';
+export type TaskLinkType = 'file' | 'folder' | 'book' | 'video' | 'url';
 
 export interface Task extends BaseRow {
   title: string;
