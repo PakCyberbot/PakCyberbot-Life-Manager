@@ -14,6 +14,7 @@ import {
   ExternalLink,
   FolderOpen,
   FolderTree,
+  Globe,
   HeartPulse,
   LayoutGrid,
   Library,
@@ -582,9 +583,12 @@ function AiProvidersCard() {
 // ---------------------------------------------------------------------------
 
 function NewsCategoriesCard() {
-  const { categories, fetchCategories, addCustomCategory, updateCategory, removeCategory, loaded } = useNewsStore();
+  const { categories, fetchCategories, addCustomCategory, addBlogCategory, updateCategory, removeCategory, loaded } = useNewsStore();
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [blogUrl, setBlogUrl] = useState('');
+  const [blogLabel, setBlogLabel] = useState('');
+  const [addingBlog, setAddingBlog] = useState(false);
 
   useEffect(() => {
     if (!loaded) fetchCategories();
@@ -597,6 +601,15 @@ function NewsCategoriesCard() {
     setPrompt('');
   };
 
+  const submitBlog = async () => {
+    if (!blogUrl.trim()) return;
+    setAddingBlog(true);
+    await addBlogCategory(blogUrl.trim(), blogLabel.trim());
+    setAddingBlog(false);
+    setBlogUrl('');
+    setBlogLabel('');
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -607,7 +620,8 @@ function NewsCategoriesCard() {
         <p className="flex items-start gap-2 text-sm text-muted">
           <Newspaper size={16} className="mt-0.5 shrink-0" />
           Each category becomes a section on the News & Updates page. Custom categories are fully yours (name +
-          what the AI should judge as relevant); Country/City just need a location.
+          what the AI should judge as relevant); Country/City just need a location; Blogs & Websites show a live,
+          scrollable preview of a real page instead of an AI-summarized digest.
         </p>
 
         <div className="space-y-2">
@@ -624,6 +638,17 @@ function NewsCategoriesCard() {
           </div>
           <Button size="sm" onClick={submit} disabled={!name.trim() || !prompt.trim()}>
             <Plus size={14} /> Add category
+          </Button>
+        </div>
+
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-medium text-muted">Add a blog or website</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Input value={blogUrl} onChange={(e) => setBlogUrl(e.target.value)} placeholder="https://..." />
+            <Input value={blogLabel} onChange={(e) => setBlogLabel(e.target.value)} placeholder="Label (optional)" />
+          </div>
+          <Button size="sm" onClick={submitBlog} disabled={!blogUrl.trim() || addingBlog}>
+            <Globe size={14} /> {addingBlog ? 'Fetching preview…' : 'Add blog/website'}
           </Button>
         </div>
       </CardContent>
@@ -643,6 +668,7 @@ function CategoryRow({
   const [name, setName] = useState(category.name);
   const [prompt, setPrompt] = useState(category.prompt ?? '');
   const [location, setLocation] = useState(category.locationValue ?? '');
+  const [blogUrl, setBlogUrl] = useState(category.url ?? '');
 
   return (
     <div className="space-y-2 rounded-lg bg-background p-3">
@@ -650,7 +676,7 @@ function CategoryRow({
         <Badge tone="library" className="capitalize">
           {category.type.replace('-', ' ')}
         </Badge>
-        {category.type === 'custom' && (
+        {(category.type === 'custom' || category.type === 'blog') && (
           <button onClick={() => onRemove(category.id)} className="text-muted hover:text-red-500">
             <Trash2 size={13} />
           </button>
@@ -674,6 +700,16 @@ function CategoryRow({
           onBlur={() => onUpdate(category.id, { locationValue: location })}
           placeholder={category.type === 'country' ? 'e.g. Pakistan' : 'e.g. Karachi'}
         />
+      ) : category.type === 'blog' ? (
+        <>
+          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => onUpdate(category.id, { name })} placeholder="Label" />
+          <Input
+            value={blogUrl}
+            onChange={(e) => setBlogUrl(e.target.value)}
+            onBlur={() => onUpdate(category.id, { url: blogUrl })}
+            placeholder="https://..."
+          />
+        </>
       ) : (
         <p className="text-sm font-medium">{category.name}</p>
       )}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ExternalLink, Newspaper, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
+import { ExternalLink, Globe, MonitorPlay, Newspaper, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import { getApi, useNewsStore } from '@life-manager/core';
 import { formatDate, type NewsCategory, type NewsItem } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -23,6 +23,9 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categories.length]);
 
+  const blogCategories = categories.filter((c) => c.type === 'blog');
+  const digestCategories = categories.filter((c) => c.type !== 'blog');
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -42,21 +45,130 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
           description="Add one from Settings — starts seeded with Cybersecurity, Global Politics, and Country/City."
         />
       ) : (
-        <div className="space-y-6">
-          {categories.map((category) => (
-            <CategorySection
-              key={category.id}
-              category={category}
-              items={itemsByCategory[category.id] ?? []}
-              loading={!!loadingByCategory[category.id]}
-              error={errorByCategory[category.id] ?? null}
-              onRefresh={() => refreshCategory(category.id)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
+        <>
+          <BlogsSection
+            categories={blogCategories}
+            loadingByCategory={loadingByCategory}
+            onRefresh={(id) => refreshCategory(id)}
+            onNavigate={onNavigate}
+          />
+
+          <div className="space-y-6">
+            {digestCategories.map((category) => (
+              <CategorySection
+                key={category.id}
+                category={category}
+                items={itemsByCategory[category.id] ?? []}
+                loading={!!loadingByCategory[category.id]}
+                error={errorByCategory[category.id] ?? null}
+                onRefresh={() => refreshCategory(category.id)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Blogs & Websites — live, scrollable previews of real pages, visually
+// distinct from the AI-summarized article lists above/below: a horizontal
+// strip of site cards rather than another vertical digest section.
+// ---------------------------------------------------------------------------
+
+function BlogsSection({
+  categories,
+  loadingByCategory,
+  onRefresh,
+  onNavigate,
+}: {
+  categories: NewsCategory[];
+  loadingByCategory: Record<string, boolean>;
+  onRefresh: (id: string) => void;
+  onNavigate: (s: ScreenId) => void;
+}) {
+  if (categories.length === 0) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div className="flex items-center gap-2 text-sm text-muted">
+            <Globe size={16} className="shrink-0" />
+            Add a blog or website in Settings for a live, scrollable preview right here.
+          </div>
+          <Button size="sm" variant="outline" onClick={() => onNavigate('settings')}>
+            Add one
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-sm font-semibold text-muted">Blogs & Websites</h2>
+      <div className="flex gap-4 overflow-x-auto pb-2">
+        {categories.map((category) => (
+          <BlogCard key={category.id} category={category} loading={!!loadingByCategory[category.id]} onRefresh={() => onRefresh(category.id)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BlogCard({ category, loading, onRefresh }: { category: NewsCategory; loading: boolean; onRefresh: () => void }) {
+  let domain = category.url ?? '';
+  try {
+    if (category.url) domain = new URL(category.url).hostname.replace(/^www\./, '');
+  } catch {
+    // leave domain as the raw url if it doesn't parse
+  }
+
+  return (
+    <Card className="flex w-64 shrink-0 flex-col overflow-hidden">
+      <div className="relative h-28 w-full overflow-hidden bg-background">
+        {category.previewImage ? (
+          <img src={category.previewImage} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accentLibrary/25 to-transparent">
+            {category.previewFavicon ? (
+              <img src={category.previewFavicon} alt="" className="h-8 w-8" />
+            ) : (
+              <Globe size={24} className="text-accentLibrary" />
+            )}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-2 p-3">
+        <div className="flex items-center gap-1.5">
+          {category.previewFavicon && <img src={category.previewFavicon} alt="" className="h-3.5 w-3.5 shrink-0" />}
+          <span className="truncate text-[11px] text-muted">{domain}</span>
+        </div>
+        <p className="line-clamp-2 text-sm font-medium leading-snug">{category.name}</p>
+        <div className="mt-auto flex items-center gap-1.5 pt-1">
+          <Button
+            size="sm"
+            className="flex-1"
+            onClick={() => category.url && getApi().system.openWebsite(category.url, category.name)}
+            disabled={!category.url}
+          >
+            <MonitorPlay size={13} /> Open Live Preview
+          </Button>
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            title="Refresh preview"
+            className="rounded-lg p-1.5 text-muted transition-colors hover:bg-background hover:text-foreground"
+          >
+            <RefreshCw size={13} className={loading ? 'animate-spin' : undefined} />
+          </button>
+        </div>
+        {category.lastFetchedAt && (
+          <span className="text-[10px] text-muted">Updated {new Date(category.lastFetchedAt).toLocaleString()}</span>
+        )}
+      </div>
+    </Card>
   );
 }
 
