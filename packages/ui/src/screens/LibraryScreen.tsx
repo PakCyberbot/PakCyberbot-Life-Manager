@@ -1,17 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, ExternalLink, FileWarning, FileX, FolderOpen, Play, Plus, Trash2 } from 'lucide-react';
-import { getApi, useBooksStore, useUiFocusStore, useVideosStore } from '@life-manager/core';
-import { formatDate, type Book, type BookStatus, type Video, type VideoKind, type VideoStatus } from '@life-manager/shared';
+import { BookOpen, ExternalLink, FileWarning, FileX, FolderOpen, Globe, Play, Plus, Trash2 } from 'lucide-react';
+import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
+import {
+  formatDate,
+  type Book,
+  type BookStatus,
+  type Video,
+  type VideoKind,
+  type VideoStatus,
+  type WebLink,
+  type WebLinkStatus,
+} from '@life-manager/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
-import { Field, Input, Select } from '../components/ui/FormControls';
+import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
 import { renderPdfCoverFromBase64 } from '../lib/pdfCover';
 import clsx from 'clsx';
 
-type Tab = 'books' | 'videos';
+type Tab = 'books' | 'videos' | 'webLinks';
+
+const TAB_LABEL: Record<Tab, string> = { books: 'books', videos: 'videos', webLinks: 'web links' };
+const NEW_ITEM_LABEL: Record<Tab, string> = { books: 'New book', videos: 'New video', webLinks: 'New web link' };
+
+const WEB_LINK_STATUS_TONE: Record<WebLinkStatus, 'default' | 'success'> = {
+  'to-explore': 'default',
+  explored: 'success',
+};
 
 const BOOK_STATUS_TONE: Record<BookStatus, 'default' | 'warning' | 'success'> = {
   'to-read': 'default',
@@ -29,8 +46,10 @@ export function LibraryScreen() {
   const [tab, setTab] = useState<Tab>('books');
   const { books, fetchBooks, loaded: booksLoaded } = useBooksStore();
   const { videos, fetchVideos, loaded: videosLoaded } = useVideosStore();
+  const { webLinks, fetchWebLinks, loaded: webLinksLoaded } = useWebLinksStore();
   const [bookDialogOpen, setBookDialogOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
+  const [webLinkDialogOpen, setWebLinkDialogOpen] = useState(false);
   const [hostname, setHostname] = useState<string | null>(null);
   const [hostFilter, setHostFilter] = useState<string>('all');
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -39,6 +58,7 @@ export function LibraryScreen() {
   useEffect(() => {
     if (!booksLoaded) fetchBooks();
     if (!videosLoaded) fetchVideos();
+    if (!webLinksLoaded) fetchWebLinks();
     getApi().system.hostname().then(setHostname);
     useBooksStore.getState().subscribeToBookmarkUpdates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +92,7 @@ export function LibraryScreen() {
         <div className="flex items-center gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
-            <p className="mt-1 text-sm text-muted">Books to read, videos to watch.</p>
+            <p className="mt-1 text-sm text-muted">Books to read, videos to watch, links to explore.</p>
           </div>
           {tab === 'books' && bookHosts.length > 1 && (
             <div className="w-40 shrink-0">
@@ -92,14 +112,18 @@ export function LibraryScreen() {
             </div>
           )}
         </div>
-        <Button onClick={() => (tab === 'books' ? setBookDialogOpen(true) : setVideoDialogOpen(true))}>
+        <Button
+          onClick={() =>
+            tab === 'books' ? setBookDialogOpen(true) : tab === 'videos' ? setVideoDialogOpen(true) : setWebLinkDialogOpen(true)
+          }
+        >
           <Plus size={16} />
-          {tab === 'books' ? 'New book' : 'New video'}
+          {NEW_ITEM_LABEL[tab]}
         </Button>
       </div>
 
       <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
-        {(['books', 'videos'] as Tab[]).map((t) => (
+        {(['books', 'videos', 'webLinks'] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -108,19 +132,22 @@ export function LibraryScreen() {
               tab === t ? 'bg-surface text-accentLibrary shadow-sm' : 'text-muted hover:text-foreground'
             )}
           >
-            {t}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
 
       {tab === 'books' ? (
         <BooksGrid books={filteredBooks} hostname={hostname} highlightId={highlightId} onEmptyAdd={() => setBookDialogOpen(true)} />
-      ) : (
+      ) : tab === 'videos' ? (
         <VideosGrid videos={videos} highlightId={highlightId} onEmptyAdd={() => setVideoDialogOpen(true)} />
+      ) : (
+        <WebLinksGrid webLinks={webLinks} onEmptyAdd={() => setWebLinkDialogOpen(true)} />
       )}
 
       <NewBookDialog open={bookDialogOpen} onClose={() => setBookDialogOpen(false)} />
       <NewVideoDialog open={videoDialogOpen} onClose={() => setVideoDialogOpen(false)} />
+      <NewWebLinkDialog open={webLinkDialogOpen} onClose={() => setWebLinkDialogOpen(false)} />
     </div>
   );
 }
@@ -460,6 +487,136 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
           </Button>
           <Button onClick={submit} disabled={!url.trim() || fetching}>
             {fetching ? 'Fetching thumbnail…' : 'Add video'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Web Links
+// ---------------------------------------------------------------------------
+
+function WebLinksGrid({ webLinks, onEmptyAdd }: { webLinks: WebLink[]; onEmptyAdd: () => void }) {
+  const { removeWebLink, updateWebLink, pendingPreviewIds } = useWebLinksStore();
+
+  if (webLinks.length === 0) {
+    return (
+      <EmptyState
+        icon={<Globe size={28} />}
+        title="No web links yet"
+        description="Save an article or page URL to explore later — a preview thumbnail is fetched automatically."
+        action={
+          <Button size="sm" onClick={onEmptyAdd}>
+            <Plus size={14} /> New web link
+          </Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      {webLinks.map((link) => {
+        const fetching = pendingPreviewIds.has(link.id);
+        let domain = link.url;
+        try {
+          domain = new URL(link.url).hostname.replace(/^www\./, '');
+        } catch {
+          // leave domain as the raw url if it doesn't parse
+        }
+        return (
+          <Card key={link.id} className="group flex flex-col overflow-hidden">
+            <button
+              onClick={() => getApi().system.openExternal(link.url)}
+              title="Open in browser"
+              className="relative block aspect-video w-full overflow-hidden bg-background"
+            >
+              {link.previewImage ? (
+                <img src={link.previewImage} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-accentLibrary/25 to-transparent">
+                  {link.favicon ? (
+                    <img src={link.favicon} alt="" className="h-7 w-7" />
+                  ) : (
+                    <Globe size={22} className="text-accentLibrary" />
+                  )}
+                </div>
+              )}
+              {fetching && (
+                <div className="absolute inset-x-0 bottom-0 bg-black/70 px-2 py-1 text-[10px] text-white">
+                  Fetching preview…
+                </div>
+              )}
+            </button>
+            <div className="flex flex-1 flex-col gap-1.5 p-3">
+              <div className="flex items-center gap-1.5">
+                {link.favicon && <img src={link.favicon} alt="" className="h-3.5 w-3.5 shrink-0" />}
+                <span className="truncate text-[11px] text-muted">{domain}</span>
+              </div>
+              <p className="line-clamp-2 text-sm font-medium leading-snug">{link.title}</p>
+              <select
+                value={link.status}
+                onChange={(e) => updateWebLink(link.id, { status: e.target.value as WebLinkStatus })}
+                className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+              >
+                <option value="to-explore">To explore</option>
+                <option value="explored">Explored</option>
+              </select>
+              <div className="mt-auto flex items-center justify-between pt-1">
+                <span className="text-[11px] text-muted">{formatDate(link.createdAt)}</span>
+                <button
+                  onClick={() => removeWebLink(link.id)}
+                  className="text-muted opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { addWebLink } = useWebLinksStore();
+  const [url, setUrl] = useState('');
+  const [title, setTitle] = useState('');
+  const [notes, setNotes] = useState('');
+  const [fetching, setFetching] = useState(false);
+
+  const submit = async () => {
+    if (!url.trim()) return;
+    setFetching(true);
+    await addWebLink(url.trim(), title.trim(), notes.trim() || null);
+    setFetching(false);
+    setUrl('');
+    setTitle('');
+    setNotes('');
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="New web link">
+      <div className="space-y-3">
+        <Field label="URL">
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoFocus />
+        </Field>
+        <Field label="Title (optional — fetched automatically if left blank)">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Deep Work: a summary" />
+        </Field>
+        <Field label="Notes (optional)">
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Why you saved this…" />
+        </Field>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!url.trim() || fetching}>
+            {fetching ? 'Fetching preview…' : 'Add web link'}
           </Button>
         </div>
       </div>

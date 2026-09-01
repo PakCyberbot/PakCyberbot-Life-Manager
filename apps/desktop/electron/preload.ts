@@ -21,6 +21,7 @@ const api: LifeManagerApi = {
     openBookInApp: (input) => ipcRenderer.invoke('system:openBookInApp', input),
     openBookExternally: (input) => ipcRenderer.invoke('system:openBookExternally', input),
     openExternal: (url) => ipcRenderer.invoke('system:openExternal', url),
+    openWebsite: (url, title) => ipcRenderer.invoke('system:openWebsite', url, title),
     onBookmarkUpdate: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, update: { id: string; page: number }) => callback(update);
       ipcRenderer.on('book:bookmarkUpdated', listener);
@@ -37,6 +38,7 @@ const api: LifeManagerApi = {
     fetchYouTubeThumbnail: (url) => ipcRenderer.invoke('media:fetchYouTubeThumbnail', url),
     fetchImageAsDataUri: (url) => ipcRenderer.invoke('media:fetchImageAsDataUri', url),
     fetchWikipediaThumbnail: (title, type) => ipcRenderer.invoke('media:fetchWikipediaThumbnail', title, type),
+    fetchWebPreview: (url) => ipcRenderer.invoke('media:fetchWebPreview', url),
   },
   drive: {
     status: () => ipcRenderer.invoke('drive:status'),

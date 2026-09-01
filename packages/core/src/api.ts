@@ -59,6 +59,14 @@ export interface SystemApi {
   openBookExternally(input: { filePath: string; page: number; readerPath?: string | null }): Promise<OpenBookResult>;
   /** Opens a URL in the system's default browser. */
   openExternal(url: string): Promise<void>;
+  /**
+   * Opens a real, scrollable, live page in a dedicated app-controlled window —
+   * a genuine top-level navigation, not an embedded iframe (this app's CSP
+   * has no frame-src, and most real sites set X-Frame-Options anyway, so
+   * neither embedding approach works). Used by News & Updates' "Blogs &
+   * Websites" live preview.
+   */
+  openWebsite(url: string, title?: string | null): Promise<{ ok: boolean; error?: string }>;
   /** Fires whenever an in-app PDF viewer window closes and updates a bookmark. Returns an unsubscribe function. */
   onBookmarkUpdate(callback: (update: BookmarkUpdate) => void): () => void;
   /** Opens a folder in the OS file browser, or a file with its default app. Only ever call this after confirming the path's hostname matches the current one. */
@@ -89,6 +97,9 @@ export interface MediaApi {
   fetchImageAsDataUri(url: string): Promise<string | null>;
   /** Looks up a real poster/cover image from Wikipedia's own free API by title (+ type hint) — a real search, never an AI-guessed URL. */
   fetchWikipediaThumbnail(title: string, type: string): Promise<string | null>;
+  /** Fetches a page's own og:title/og:image/favicon directly from its HTML — used by Library's Web Links tab
+   * and News & Updates' Blogs & Websites, never an AI-guessed preview. */
+  fetchWebPreview(url: string): Promise<{ title: string | null; image: string | null; favicon: string | null } | null>;
 }
 
 export interface DriveSyncResult {
@@ -135,6 +146,9 @@ export interface BackupApi {
 export interface NewsFetchResult {
   ok: boolean;
   items?: unknown[];
+  /** The category row after the fetch — for 'blog' categories this carries the freshly-fetched
+   * previewImage/previewFavicon/name, which the store merges into local state. */
+  category?: unknown;
   error?: string;
 }
 

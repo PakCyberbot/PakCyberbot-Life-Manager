@@ -180,6 +180,35 @@ function openBookInAppWindow(input: { id: string; filePath: string; page: number
   return { ok: true };
 }
 
+// --- Live website preview window ---------------------------------------------
+// For News & Updates' "Blogs & Websites" and Library's Web Links: showing a
+// real external page *inside* the app can't be done with an <iframe> (this
+// app's CSP has no frame-src, so it falls back to default-src 'self' and
+// blocks any iframe outright) or <webview> (not enabled, and would need its
+// own security hardening) — and even without those restrictions, most real
+// news/blog sites set X-Frame-Options/frame-ancestors and would refuse to be
+// framed anyway. A plain top-level BrowserWindow doing a real loadURL() is
+// not "framing" and is unaffected by either restriction — same trick as the
+// PDF reader above (Chromium's own viewer in a dedicated window rather than
+// reimplementing rendering). Kept deliberately as minimal as that window too:
+// default frame, no custom chrome.
+
+function openWebsitePreviewWindow(url: string, title?: string | null) {
+  const viewer = new BrowserWindow({
+    width: 1000,
+    height: 800,
+    backgroundColor: '#0f0f14',
+    icon: resolveIconPath(),
+    title: title || url,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  viewer.loadURL(url);
+  return { ok: true };
+}
+
 // --- External reader (optional) --------------------------------------------
 // For anyone who'd rather read in their own Adobe/Foxit/Edge instead of the
 // in-app viewer above. Trade-off: no automatic bookmark tracking here — we
@@ -310,15 +339,86 @@ async function fetchWikipediaThumbnail(title: string, type: string): Promise<str
   return imageUrl ? fetchImageAsDataUri(imageUrl) : null;
 }
 
+// --- Web page preview lookup (og:image/og:title/favicon) --------------------
+// Shared by Library's Web Links tab and News & Updates' "Blogs & Websites":
+// fetches the page's own HTML and pulls its Open Graph title/image plus a
+// favicon — a real preview of that real page, same "never ask an AI for a
+// URL/image" discipline as the Wikipedia lookup above, just sourced directly
+// from the page itself instead of a third-party API. No HTML parser
+// dependency — regex extraction, consistent with how ai/news.ts already
+// regex-parses RSS XML rather than pulling in a full parser for a handful of
+// tags. A realistic User-Agent is set since a lot of sites silently reject
+// (or serve a stripped-down page to) Node's default fetch UA.
+
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .trim();
+}
+
+function extractMetaContent(html: string, property: string): string | null {
+  const pattern = new RegExp(
+    `<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["']|<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${property}["']`,
+    'i'
+  );
+  const match = html.match(pattern);
+  const value = match?.[1] ?? match?.[2];
+  return value ? decodeHtmlEntities(value) : null;
+}
+
+interface WebPreview {
+  title: string | null;
+  image: string | null;
+  favicon: string | null;
+}
+
+async function fetchWebPreview(url: string): Promise<WebPreview | null> {
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' } });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const ogTitle = extractMetaContent(html, 'og:title');
+    const titleTagMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const title = ogTitle ?? (titleTagMatch ? decodeHtmlEntities(titleTagMatch[1]) : null);
+
+    const ogImage = extractMetaContent(html, 'og:image');
+    const iconMatch = html.match(/<link[^>]+rel=["'](?:shortcut icon|icon|apple-touch-icon)["'][^>]+href=["']([^"']+)["']/i);
+
+    const origin = new URL(url).origin;
+    const resolvedImage = ogImage ? new URL(ogImage, url).href : null;
+    const resolvedFavicon = iconMatch ? new URL(iconMatch[1], url).href : `${origin}/favicon.ico`;
+
+    const [image, favicon] = await Promise.all([
+      resolvedImage ? fetchImageAsDataUri(resolvedImage) : Promise.resolve(null),
+      fetchImageAsDataUri(resolvedFavicon).catch(() => null),
+    ]);
+
+    return { title, image, favicon };
+  } catch {
+    return null;
+  }
+}
+
 interface NewsCategoryRow {
   id: string;
   type: string;
   name: string;
   prompt: string | null;
   locationValue: string | null;
+  url: string | null;
 }
 
-/** Maps a category to (Google News RSS search query, AI relevance framing). */
+/** Maps a category to (Google News RSS search query, AI relevance framing). 'blog' categories never
+ * reach this — the news:fetch handler branches to fetchWebPreview() for them before calling this. */
 function buildNewsQuery(category: NewsCategoryRow): { query: string; framing: string } | { error: string } {
   switch (category.type) {
     case 'custom':
@@ -371,6 +471,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('system:openBookInApp', (_e, input) => openBookInAppWindow(input));
   ipcMain.handle('system:openBookExternally', (_e, input) => openBookExternally(input));
   ipcMain.handle('system:openExternal', (_e, url: string) => shell.openExternal(url));
+  ipcMain.handle('system:openWebsite', (_e, url: string, title?: string) => openWebsitePreviewWindow(url, title));
   ipcMain.handle('system:openLocalPath', async (_e, targetPath: string) => {
     if (!fs.existsSync(targetPath)) return { ok: false, error: 'This path does not exist on this machine.' };
     // shell.openPath opens a folder in the OS file browser or a file with its
@@ -412,10 +513,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('media:fetchYouTubeThumbnail', (_e, url: string) => fetchYouTubeThumbnail(url));
   ipcMain.handle('media:fetchImageAsDataUri', (_e, url: string) => fetchImageAsDataUri(url));
   ipcMain.handle('media:fetchWikipediaThumbnail', (_e, title: string, type: string) => fetchWikipediaThumbnail(title, type));
+  ipcMain.handle('media:fetchWebPreview', (_e, url: string) => fetchWebPreview(url));
 
   ipcMain.handle('news:fetch', async (_e, categoryId: string) => {
     const category = store!.get<NewsCategoryRow>('newsCategories', categoryId);
     if (!category) return { ok: false, error: 'Category not found.' };
+
+    // 'blog' categories are a live site preview, not an RSS/AI digest — fetch
+    // og:title/og:image/favicon straight from the site itself and stop there.
+    if (category.type === 'blog') {
+      if (!category.url) return { ok: false, error: 'Set a URL for this blog/website in Settings first.' };
+      const preview = await fetchWebPreview(category.url);
+      if (!preview) return { ok: false, error: 'Could not load a preview for this URL — it may be blocking automated requests.' };
+      const now = new Date().toISOString();
+      const patch: Record<string, unknown> = {
+        previewImage: preview.image,
+        previewFavicon: preview.favicon,
+        lastFetchedAt: now,
+        updatedAt: now,
+      };
+      // Only overwrite the name if the user never set a real one (still the placeholder URL).
+      if (preview.title && category.name === category.url) patch.name = preview.title;
+      store!.update('newsCategories', categoryId, patch);
+      return { ok: true, items: [], category: store!.get('newsCategories', categoryId) };
+    }
 
     const built = buildNewsQuery(category);
     if ('error' in built) return { ok: false, error: built.error };
@@ -442,7 +563,7 @@ app.whenReady().then(async () => {
     );
     store!.update('newsCategories', categoryId, { lastFetchedAt: now, updatedAt: now });
 
-    return { ok: true, items: store!.list('newsItems', { categoryId }) };
+    return { ok: true, items: store!.list('newsItems', { categoryId }), category: store!.get('newsCategories', categoryId) };
   });
 
   ipcMain.handle('entertainment:generateVerdict', async (_e, input: { title: string; type: string }) => {

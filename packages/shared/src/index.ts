@@ -154,11 +154,28 @@ export interface Quote extends BaseRow {
   author?: string | null;
 }
 
+/** Library — saved article/web-page links, distinct from Books/Videos: just a URL worth exploring
+ * later, with a preview image/favicon fetched once at add time (same fetch-and-inline convention
+ * as everything else's thumbnails — see structure.md's Library section). */
+export type WebLinkStatus = 'to-explore' | 'explored';
+
+export interface WebLink extends BaseRow {
+  title: string;
+  url: string;
+  /** data: URI of the fetched og:image (or similar), or null if unavailable. */
+  previewImage?: string | null;
+  /** data: URI of the fetched favicon, or null if unavailable. */
+  favicon?: string | null;
+  notes?: string | null;
+  status: WebLinkStatus;
+}
+
 // ---------------------------------------------------------------------------
 // News & Updates
 // ---------------------------------------------------------------------------
 
-export type NewsCategoryType = 'custom' | 'global-politics' | 'country' | 'city';
+/** 'blog' is a live-preview site (no RSS/AI digest) — see structure.md's News section. */
+export type NewsCategoryType = 'custom' | 'global-politics' | 'country' | 'city' | 'blog';
 export type AiProviderId = 'gemini' | 'openai' | 'anthropic';
 
 export interface NewsCategory extends BaseRow {
@@ -168,6 +185,12 @@ export interface NewsCategory extends BaseRow {
   prompt?: string | null;
   /** The country or city name — only meaningful for 'country'/'city'. */
   locationValue?: string | null;
+  /** The blog/site's address — only meaningful for 'blog'. */
+  url?: string | null;
+  /** data: URI of the fetched og:image, or null if unavailable — only meaningful for 'blog'. */
+  previewImage?: string | null;
+  /** data: URI of the fetched favicon, or null if unavailable — only meaningful for 'blog'. */
+  previewFavicon?: string | null;
   lastFetchedAt?: string | null;
 }
 

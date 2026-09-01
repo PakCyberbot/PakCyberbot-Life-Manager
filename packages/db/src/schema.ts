@@ -170,6 +170,22 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // Library — saved article/web-page links (a 3rd Library tab alongside
+  // books/videos): just a URL worth exploring later, with a preview
+  // image/favicon fetched once at add time, same as every other thumbnail
+  // in this app (fetch in main, inline as a data: URI).
+  `CREATE TABLE IF NOT EXISTS webLinks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    previewImage TEXT,
+    favicon TEXT,
+    notes TEXT,
+    status TEXT NOT NULL DEFAULT 'to-explore',
+    createdAt TEXT NOT NULL,
+    updatedAt TEXT NOT NULL,
+    deletedAt TEXT
+  )`,
   // Life Quotes / Reminders (structure.md's Dashboard widget). Managed from
   // Settings; the Dashboard shows one at random each time it's viewed.
   `CREATE TABLE IF NOT EXISTS quotes (
@@ -183,12 +199,17 @@ export const SCHEMA_STATEMENTS: string[] = [
   // News & Updates categories. 'custom' has an editable name+prompt (e.g. the
   // seeded "Cybersecurity" one); 'global-politics'/'country'/'city' are fixed
   // built-ins — country/city need a locationValue set before they'll fetch.
+  // 'blog' is a user-added site url with a fetched preview image/favicon
+  // instead of an RSS/AI digest — see structure.md's News section.
   `CREATE TABLE IF NOT EXISTS newsCategories (
     id TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     name TEXT NOT NULL,
     prompt TEXT,
     locationValue TEXT,
+    url TEXT,
+    previewImage TEXT,
+    previewFavicon TEXT,
     lastFetchedAt TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
