@@ -1,12 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BookOpen,
   CheckSquare,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   FileWarning,
   FolderOpen,
   ImageOff,
   Link2,
+  ListTodo,
   Pencil,
   Play,
   Plus,
@@ -23,7 +26,15 @@ import {
   useUiFocusStore,
   useVideosStore,
 } from '@life-manager/core';
-import { formatDate, type Goal, type GoalStatus, type GoalType, type Task, type TaskLinkType, type TaskPriority } from '@life-manager/shared';
+import {
+  formatDate,
+  type Goal,
+  type GoalStatus,
+  type GoalType,
+  type Task,
+  type TaskLinkType,
+  type TaskPriority,
+} from '@life-manager/shared';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
@@ -58,14 +69,28 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
 
 export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }) {
   const { goals, fetchGoals, addGoal, updateGoal, removeGoal, loaded } = useGoalsStore();
-  const { fetchTasks, loaded: tasksLoaded } = useTasksStore();
+  const { tasks, fetchTasks, loaded: tasksLoaded, addTask, assignTask } = useTasksStore();
+  const { byGoalId: milestonesByGoalId, fetchForGoal } = useMilestonesStore();
   const [createOpen, setCreateOpen] = useState(false);
   const [detailGoal, setDetailGoal] = useState<Goal | null>(null);
+  const [quickTaskDialogOpen, setQuickTaskDialogOpen] = useState(false);
+  const [assigningTask, setAssigningTask] = useState<Task | null>(null);
 
   useEffect(() => {
     if (!loaded) fetchGoals();
     if (!tasksLoaded) fetchTasks();
   }, [loaded, fetchGoals, tasksLoaded, fetchTasks]);
+
+  // Milestone labels in the assign dialogs (and milestone-linked progress) need every goal's
+  // milestones available, not just the currently-open one — prefetch anything not already loaded.
+  useEffect(() => {
+    for (const g of goals) {
+      if (!(g.id in milestonesByGoalId)) fetchForGoal(g.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goals]);
+
+  const quickTasks = useMemo(() => tasks.filter((t) => !t.linkedGoalId), [tasks]);
 
   return (
     <div className="space-y-6">
@@ -118,11 +143,57 @@ export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void 
         </div>
       )}
 
+      <div className="border-t border-border pt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+              <ListTodo size={15} className="text-accentGoals" /> Quick Tasks
+            </h2>
+            <p className="text-xs text-muted">Not tied to a goal yet — capture it now, file it under a goal or milestone later.</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => setQuickTaskDialogOpen(true)}>
+            <Plus size={13} /> Add quick task
+          </Button>
+        </div>
+        {quickTasks.length === 0 ? (
+          <p className="rounded-lg bg-surface px-3 py-2.5 text-xs text-muted">Nothing unassigned right now.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {quickTasks.map((t) => (
+              <div key={t.id} className="flex items-center gap-2.5 rounded-lg bg-surface px-3 py-2.5 text-sm">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{t.title}</p>
+                  <p className="truncate text-xs text-muted">{t.dueDate ? formatDate(t.dueDate) : 'No due date'}</p>
+                </div>
+                <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
+                <Button size="sm" variant="outline" onClick={() => setAssigningTask(t)}>
+                  Assign
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <CreateGoalDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreate={addGoal} />
+
+      <TaskDialog open={quickTaskDialogOpen} onClose={() => setQuickTaskDialogOpen(false)} onCreate={addTask} />
+
+      <AssignTaskDialog
+        open={!!assigningTask}
+        onClose={() => setAssigningTask(null)}
+        task={assigningTask}
+        goals={goals}
+        onAssign={async (goalId, milestoneId) => {
+          if (!assigningTask) return;
+          await assignTask(assigningTask.id, { linkedGoalId: goalId, linkedMilestoneId: milestoneId });
+        }}
+      />
 
       {detailGoal && (
         <GoalDetailDialog
           goal={goals.find((g) => g.id === detailGoal.id) ?? detailGoal}
+          goals={goals}
           onClose={() => setDetailGoal(null)}
           onUpdate={updateGoal}
           onDelete={async (id) => {
@@ -211,25 +282,47 @@ function CreateGoalDialog({
 
 function GoalDetailDialog({
   goal,
+  goals,
   onClose,
   onUpdate,
   onDelete,
   onNavigate,
 }: {
   goal: Goal;
+  goals: Goal[];
   onClose: () => void;
   onUpdate: ReturnType<typeof useGoalsStore.getState>['updateGoal'];
   onDelete: (id: string) => void;
   onNavigate: (s: ScreenId) => void;
 }) {
   const { byGoalId, fetchForGoal, addMilestone, toggleMilestone, removeMilestone } = useMilestonesStore();
-  const { tasks, addTask, updateTask, setStatus, removeTask } = useTasksStore();
+  const { tasks, addTask, updateTask, setStatus, removeTask, assignTask } = useTasksStore();
   const milestones = byGoalId[goal.id] ?? [];
-  const goalTasks = tasks.filter((t) => t.linkedGoalId === goal.id);
+  // Milestone-linked tasks render nested under their milestone (below), not in this flat list.
+  const goalLevelTasks = tasks.filter((t) => t.linkedGoalId === goal.id && !t.linkedMilestoneId);
   const [newMilestone, setNewMilestone] = useState('');
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [hostname, setHostname] = useState<string | null>(null);
+  const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
+  const [assignExistingFor, setAssignExistingFor] = useState<{ milestoneId: string | null } | null>(null);
+  const [milestoneQuickAdd, setMilestoneQuickAdd] = useState<Record<string, string>>({});
+
+  const toggleExpanded = (milestoneId: string) => {
+    setExpandedMilestones((prev) => {
+      const next = new Set(prev);
+      if (next.has(milestoneId)) next.delete(milestoneId);
+      else next.add(milestoneId);
+      return next;
+    });
+  };
+
+  const addMilestoneSubtask = async (milestoneId: string) => {
+    const title = (milestoneQuickAdd[milestoneId] ?? '').trim();
+    if (!title) return;
+    await addTask({ title, priority: 'medium', linkedGoalId: goal.id, linkedMilestoneId: milestoneId });
+    setMilestoneQuickAdd((prev) => ({ ...prev, [milestoneId]: '' }));
+  };
 
   // Editable goal fields — local state so typing doesn't fight the parent's
   // `goals.find(...)` object identity, resynced only when switching to a
@@ -378,20 +471,71 @@ function GoalDetailDialog({
         <div>
           <p className="mb-2 text-xs font-medium text-muted">Milestones</p>
           <div className="space-y-1.5">
-            {milestones.map((m) => (
-              <label key={m.id} className="flex items-center gap-2.5 rounded-lg bg-background px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!!m.completed}
-                  onChange={() => toggleMilestone(goal.id, m.id)}
-                  className="h-4 w-4 rounded border-border accent-current text-accentGoals"
-                />
-                <span className={m.completed ? 'flex-1 text-muted line-through' : 'flex-1'}>{m.title}</span>
-                <button onClick={() => removeMilestone(goal.id, m.id)} className="text-muted hover:text-red-500">
-                  <Trash2 size={13} />
-                </button>
-              </label>
-            ))}
+            {milestones.map((m) => {
+              const subtasks = tasks.filter((t) => t.linkedGoalId === goal.id && t.linkedMilestoneId === m.id);
+              const expanded = expandedMilestones.has(m.id);
+              return (
+                <div key={m.id} className="rounded-lg bg-background">
+                  <div className="flex items-center gap-2 px-3 py-2 text-sm">
+                    <button
+                      onClick={() => toggleExpanded(m.id)}
+                      className="shrink-0 text-muted hover:text-foreground"
+                      title={expanded ? 'Collapse' : `${subtasks.length} task${subtasks.length === 1 ? '' : 's'}`}
+                    >
+                      {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                    <input
+                      type="checkbox"
+                      checked={!!m.completed}
+                      onChange={() => toggleMilestone(goal.id, m.id)}
+                      className="h-4 w-4 rounded border-border accent-current text-accentGoals"
+                    />
+                    <span className={clsx('flex-1', m.completed && 'text-muted line-through')}>{m.title}</span>
+                    {subtasks.length > 0 && (
+                      <span className="text-[11px] text-muted">
+                        {subtasks.filter((t) => t.status === 'done').length}/{subtasks.length}
+                      </span>
+                    )}
+                    <button onClick={() => removeMilestone(goal.id, m.id)} className="text-muted hover:text-red-500">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                  {expanded && (
+                    <div className="space-y-1.5 border-t border-border px-3 py-2">
+                      {subtasks.map((t) => (
+                        <label key={t.id} className="flex items-center gap-2.5 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={t.status === 'done'}
+                            onChange={() => setStatus(t.id, t.status === 'done' ? 'todo' : 'done')}
+                            className="h-4 w-4 shrink-0 rounded border-border accent-current text-accentGoals"
+                          />
+                          <span className={clsx('flex-1', t.status === 'done' && 'text-muted line-through')}>{t.title}</span>
+                          <button onClick={() => removeTask(t.id)} className="shrink-0 text-muted hover:text-red-500">
+                            <Trash2 size={12} />
+                          </button>
+                        </label>
+                      ))}
+                      <div className="flex gap-2 pt-1">
+                        <Input
+                          value={milestoneQuickAdd[m.id] ?? ''}
+                          onChange={(e) => setMilestoneQuickAdd((prev) => ({ ...prev, [m.id]: e.target.value }))}
+                          placeholder="Add a task"
+                          className="h-7 !py-1 !text-xs"
+                          onKeyDown={(e) => e.key === 'Enter' && addMilestoneSubtask(m.id)}
+                        />
+                        <Button size="sm" variant="outline" onClick={() => addMilestoneSubtask(m.id)}>
+                          Add
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setAssignExistingFor({ milestoneId: m.id })}>
+                          Assign existing
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
           <div className="mt-2 flex gap-2">
             <Input
@@ -411,17 +555,23 @@ function GoalDetailDialog({
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted">
               <CheckSquare size={13} /> Tasks
             </p>
-            <Button size="sm" variant="outline" onClick={() => setTaskDialogOpen(true)}>
-              <Plus size={13} /> Add task
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setAssignExistingFor({ milestoneId: null })}>
+                Assign existing
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setTaskDialogOpen(true)}>
+                <Plus size={13} /> Add task
+              </Button>
+            </div>
           </div>
-          {goalTasks.length === 0 ? (
+          {goalLevelTasks.length === 0 ? (
             <p className="rounded-lg bg-background px-3 py-2.5 text-xs text-muted">
-              No tasks yet — break this goal into steps, optionally linked to a file, folder, web link, book, or video.
+              No goal-level tasks yet — break this goal into steps (or nest them under a milestone above),
+              optionally linked to a file, folder, web link, book, or video.
             </p>
           ) : (
             <div className="space-y-1.5">
-              {goalTasks.map((t) => {
+              {goalLevelTasks.map((t) => {
                 const linkedOnOtherMachine =
                   (t.linkType === 'file' || t.linkType === 'folder') && t.linkHostname && t.linkHostname !== hostname;
                 return (
@@ -510,6 +660,17 @@ function GoalDetailDialog({
           onUpdate={updateTask}
         />
       )}
+      <AssignExistingTaskDialog
+        open={!!assignExistingFor}
+        onClose={() => setAssignExistingFor(null)}
+        tasks={tasks}
+        goals={goals}
+        excludeGoalId={goal.id}
+        excludeMilestoneId={assignExistingFor?.milestoneId ?? null}
+        onPick={async (taskId) => {
+          await assignTask(taskId, { linkedGoalId: goal.id, linkedMilestoneId: assignExistingFor?.milestoneId ?? null });
+        }}
+      />
     </Dialog>
   );
 }
@@ -526,7 +687,8 @@ function TaskDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  goal: Goal;
+  /** Absent for a "quick task" (created with no goal — see GoalsScreen's Quick Tasks section). */
+  goal?: Goal;
   /** When present, edits this existing task instead of creating a new one. */
   task?: Task;
   onCreate: ReturnType<typeof useTasksStore.getState>['addTask'];
@@ -605,12 +767,14 @@ function TaskDialog({
     } else if (linkMode === 'book' && selectedBookId) {
       linkType = 'book';
       linkTargetId = selectedBookId;
-      // Tag the book with this goal's title so Library shows which goal it belongs to.
-      await updateBook(selectedBookId, { category: goal.title });
+      // Tag the book with this goal's title so Library shows which goal it belongs to — only
+      // meaningful when there's a goal at all (a quick task's book/video link isn't tagged until
+      // the task itself is later assigned into a goal).
+      if (goal) await updateBook(selectedBookId, { category: goal.title });
     } else if (linkMode === 'video' && selectedVideoId) {
       linkType = 'video';
       linkTargetId = selectedVideoId;
-      await updateVideo(selectedVideoId, { category: goal.title });
+      if (goal) await updateVideo(selectedVideoId, { category: goal.title });
     }
 
     const payload = {
@@ -627,15 +791,23 @@ function TaskDialog({
     if (isEditing && task && onUpdate) {
       await onUpdate(task.id, payload);
     } else {
-      await onCreate({ ...payload, linkedGoalId: goal.id });
+      await onCreate({ ...payload, linkedGoalId: goal?.id ?? null });
     }
     setSubmitting(false);
     reset();
     onClose();
   };
 
+  const dialogTitle = goal
+    ? isEditing
+      ? `Edit task — ${goal.title}`
+      : `New task — ${goal.title}`
+    : isEditing
+      ? 'Edit quick task'
+      : 'New quick task';
+
   return (
-    <Dialog open={open} onClose={onClose} title={isEditing ? `Edit task — ${goal.title}` : `New task — ${goal.title}`}>
+    <Dialog open={open} onClose={onClose} title={dialogTitle}>
       <div className="space-y-3">
         <Field label="Title">
           <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Draft the outline" autoFocus />
@@ -710,7 +882,7 @@ function TaskDialog({
               ))}
             </Select>
           ))}
-        {(linkMode === 'book' || linkMode === 'video') && (
+        {(linkMode === 'book' || linkMode === 'video') && goal && (
           <p className="text-[11px] text-muted">
             Linking this will tag it "{goal.title}" in Library, so you can see which items belong to which goals.
           </p>
@@ -722,6 +894,158 @@ function TaskDialog({
           </Button>
           <Button onClick={submit} disabled={!title.trim() || submitting}>
             {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add task'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Picks a *destination* (goal, and optionally one of its milestones) for an already-known task —
+ * used by the bottom Quick Tasks section. */
+function AssignTaskDialog({
+  open,
+  onClose,
+  task,
+  goals,
+  onAssign,
+}: {
+  open: boolean;
+  onClose: () => void;
+  task: Task | null;
+  goals: Goal[];
+  onAssign: (goalId: string, milestoneId: string | null) => Promise<void>;
+}) {
+  const { byGoalId, fetchForGoal } = useMilestonesStore();
+  const [goalId, setGoalId] = useState('');
+  const [milestoneId, setMilestoneId] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    const first = goals[0]?.id ?? '';
+    setGoalId(first);
+    setMilestoneId('');
+    if (first) fetchForGoal(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, task?.id]);
+
+  const chooseGoal = (id: string) => {
+    setGoalId(id);
+    setMilestoneId('');
+    fetchForGoal(id);
+  };
+
+  const milestones = byGoalId[goalId] ?? [];
+
+  const submit = async () => {
+    if (!goalId) return;
+    await onAssign(goalId, milestoneId || null);
+    onClose();
+  };
+
+  if (!task) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} title={`Assign "${task.title}"`}>
+      <div className="space-y-3">
+        {goals.length === 0 ? (
+          <p className="text-xs text-muted">No goals yet — create one first.</p>
+        ) : (
+          <>
+            <Field label="Goal">
+              <Select value={goalId} onChange={(e) => chooseGoal(e.target.value)}>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.title}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {milestones.length > 0 && (
+              <Field label="Milestone (optional)">
+                <Select value={milestoneId} onChange={(e) => setMilestoneId(e.target.value)}>
+                  <option value="">Goal-level (no milestone)</option>
+                  {milestones.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.title}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+          </>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!goalId}>
+            Assign
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Picks an *existing task* to pull into a fixed destination (a goal, or one of its milestones —
+ * `excludeMilestoneId: null` means goal-level) — used by GoalDetailDialog's "Assign existing"
+ * buttons. Lists every task not already at that exact destination: quick tasks first, then tasks
+ * under other goals/milestones, each labeled with where they currently live. */
+function AssignExistingTaskDialog({
+  open,
+  onClose,
+  tasks,
+  goals,
+  excludeGoalId,
+  excludeMilestoneId,
+  onPick,
+}: {
+  open: boolean;
+  onClose: () => void;
+  tasks: Task[];
+  goals: Goal[];
+  excludeGoalId: string;
+  excludeMilestoneId: string | null;
+  onPick: (taskId: string) => Promise<void>;
+}) {
+  const { byGoalId } = useMilestonesStore();
+
+  const labelFor = (t: Task) => {
+    if (!t.linkedGoalId) return 'Quick task';
+    const goalTitle = goals.find((g) => g.id === t.linkedGoalId)?.title ?? 'Unknown goal';
+    if (!t.linkedMilestoneId) return goalTitle;
+    const milestoneTitle = (byGoalId[t.linkedGoalId] ?? []).find((m) => m.id === t.linkedMilestoneId)?.title;
+    return milestoneTitle ? `${goalTitle} › ${milestoneTitle}` : goalTitle;
+  };
+
+  const candidates = tasks.filter((t) => !(t.linkedGoalId === excludeGoalId && t.linkedMilestoneId === excludeMilestoneId));
+
+  const pick = async (taskId: string) => {
+    await onPick(taskId);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Assign an existing task">
+      <div className="max-h-96 space-y-1.5 overflow-y-auto">
+        {candidates.length === 0 ? (
+          <p className="text-xs text-muted">No other tasks to bring in.</p>
+        ) : (
+          candidates.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => pick(t.id)}
+              className="flex w-full items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 text-left text-sm hover:bg-border"
+            >
+              <span className="min-w-0 flex-1 truncate">{t.title}</span>
+              <span className="shrink-0 text-xs text-muted">{labelFor(t)}</span>
+            </button>
+          ))
+        )}
+        <div className="flex justify-end pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
           </Button>
         </div>
       </div>

@@ -33,9 +33,12 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
-  // Tasks live inside a Goal (created from its detail view), not a standalone
-  // module — linkType/linkPath/linkHostname/linkTargetId are an optional
-  // single link: a local file/folder path, or a Library book/video's id.
+  // Tasks are primarily created inside a Goal's detail view, but linkedGoalId
+  // is optional — a task with none is a "quick task" (see GoalsScreen's
+  // bottom Quick Tasks section) that can be assigned into a goal, or one
+  // specific milestone within it (linkedMilestoneId), at any point later.
+  // linkType/linkPath/linkHostname/linkTargetId are an optional single link:
+  // a local file/folder path, or a Library book/video's id.
   `CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -44,6 +47,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     priority TEXT NOT NULL DEFAULT 'medium',
     status TEXT NOT NULL DEFAULT 'todo',
     linkedGoalId TEXT,
+    linkedMilestoneId TEXT,
     linkType TEXT,
     linkPath TEXT,
     linkHostname TEXT,

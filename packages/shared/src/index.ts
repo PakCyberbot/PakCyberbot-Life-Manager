@@ -54,8 +54,13 @@ export interface Task extends BaseRow {
   dueDate?: string | null;
   priority: TaskPriority;
   status: TaskStatus;
-  /** Every task belongs to a goal — created from inside that goal's detail view. */
+  /** Optional — a task with no goal is a "quick task" (see GoalsScreen's Quick Tasks section),
+   * assignable into a goal (and optionally one of its milestones) at any point later. */
   linkedGoalId?: ID | null;
+  /** Nests this task under one specific milestone of linkedGoalId (rather than the goal directly).
+   * Only meaningful when linkedGoalId is also set. Milestone-linked tasks contribute to that goal's
+   * auto-computed progress alongside its milestones — see useMilestonesStore's syncGoalProgress. */
+  linkedMilestoneId?: ID | null;
   linkType?: TaskLinkType | null;
   /** For linkType 'file'/'folder': the local path. */
   linkPath?: string | null;
