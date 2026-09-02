@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Globe, Play, Plus, Trash2 } from 'lucide-react';
-import { getApi, useBooksStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
+import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
 import type { Book, VideoKind, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
 import { Card, Badge, Button, Dialog, Field, Input, Textarea, EmptyState } from '@life-manager/ui';
 import clsx from 'clsx';
@@ -21,6 +21,8 @@ export function MobileLibraryScreen() {
   const { webLinks, fetchWebLinks, loaded: webLinksLoaded } = useWebLinksStore();
   const [hostname, setHostname] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
   useEffect(() => {
     if (!booksLoaded) fetchBooks();
@@ -29,6 +31,24 @@ export function MobileLibraryScreen() {
     getApi().system.hostname().then(setHostname);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A Task's linked book/video (see GoalsView/TaskRow) sets this to jump straight to that item —
+  // switch to its tab, remember its id to scroll+highlight it, then clear the signal so it only
+  // fires once per navigation. Same pattern as desktop's LibraryScreen.
+  useEffect(() => {
+    if (!libraryFocus) return;
+    setTab(libraryFocus.type === 'book' ? 'books' : 'videos');
+    setHighlightId(libraryFocus.id);
+    clearLibraryFocus();
+  }, [libraryFocus, clearLibraryFocus]);
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const el = document.getElementById(`library-${highlightId}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const timer = setTimeout(() => setHighlightId(null), 2000);
+    return () => clearTimeout(timer);
+  }, [highlightId, tab]);
 
   return (
     <div className="space-y-5">
@@ -59,8 +79,8 @@ export function MobileLibraryScreen() {
         ))}
       </div>
 
-      {tab === 'books' && <BooksList books={books} hostname={hostname} />}
-      {tab === 'videos' && <VideosList videos={videos} onEmptyAdd={() => setAddOpen(true)} />}
+      {tab === 'books' && <BooksList books={books} hostname={hostname} highlightId={highlightId} />}
+      {tab === 'videos' && <VideosList videos={videos} onEmptyAdd={() => setAddOpen(true)} highlightId={highlightId} />}
       {tab === 'webLinks' && <WebLinksList webLinks={webLinks} onEmptyAdd={() => setAddOpen(true)} />}
 
       {tab === 'videos' && <NewVideoDialog open={addOpen} onClose={() => setAddOpen(false)} />}
@@ -69,7 +89,7 @@ export function MobileLibraryScreen() {
   );
 }
 
-function BooksList({ books, hostname }: { books: Book[]; hostname: string | null }) {
+function BooksList({ books, hostname, highlightId }: { books: Book[]; hostname: string | null; highlightId: string | null }) {
   if (books.length === 0) {
     return (
       <EmptyState
@@ -84,7 +104,11 @@ function BooksList({ books, hostname }: { books: Book[]; hostname: string | null
       {books.map((b) => {
         const onOtherHost = b.hostname && hostname && b.hostname !== hostname;
         return (
-          <Card key={b.id} className="overflow-hidden">
+          <Card
+            key={b.id}
+            id={`library-${b.id}`}
+            className={clsx('overflow-hidden transition-shadow', highlightId === b.id && 'ring-2 ring-accentLibrary')}
+          >
             <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-accentLibrary/25 via-accentLibrary/10 to-transparent p-3 text-center">
               {b.coverImage ? (
                 <img src={b.coverImage} alt="" className="h-full w-full object-cover" />
@@ -106,7 +130,7 @@ function BooksList({ books, hostname }: { books: Book[]; hostname: string | null
   );
 }
 
-function VideosList({ videos, onEmptyAdd }: { videos: Video[]; onEmptyAdd: () => void }) {
+function VideosList({ videos, onEmptyAdd, highlightId }: { videos: Video[]; onEmptyAdd: () => void; highlightId: string | null }) {
   const { removeVideo, updateVideo } = useVideosStore();
   if (videos.length === 0) {
     return (
@@ -125,7 +149,11 @@ function VideosList({ videos, onEmptyAdd }: { videos: Video[]; onEmptyAdd: () =>
   return (
     <div className="space-y-2.5">
       {videos.map((v) => (
-        <Card key={v.id} className="flex gap-3 p-2.5">
+        <Card
+          key={v.id}
+          id={`library-${v.id}`}
+          className={clsx('flex gap-3 p-2.5 transition-shadow', highlightId === v.id && 'ring-2 ring-accentLibrary')}
+        >
           <button onClick={() => getApi().system.openExternal(v.url)} className="relative h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-background">
             {v.thumbnail ? (
               <img src={v.thumbnail} alt="" className="h-full w-full object-cover" />

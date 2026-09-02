@@ -1,7 +1,19 @@
 import { ChevronLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-export function SectionHeader({ title, subtitle, onBack }: { title: string; subtitle?: string; onBack: () => void }) {
+export function SectionHeader({
+  title,
+  subtitle,
+  onBack,
+  right,
+}: {
+  title: string;
+  subtitle?: string;
+  onBack: () => void;
+  /** Optional right-aligned slot (e.g. an "Edit" mode toggle) — kept small/optional
+   * since most read-only views have nothing to put here. */
+  right?: ReactNode;
+}) {
   return (
     <div className="mb-6 flex items-center gap-2">
       <button
@@ -10,10 +22,11 @@ export function SectionHeader({ title, subtitle, onBack }: { title: string; subt
       >
         <ChevronLeft size={18} />
       </button>
-      <div>
+      <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
       </div>
+      {right && <div className="shrink-0">{right}</div>}
     </div>
   );
 }
