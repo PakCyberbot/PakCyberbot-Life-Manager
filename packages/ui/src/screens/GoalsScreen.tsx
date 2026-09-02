@@ -67,18 +67,83 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
   bmp: 'image/bmp',
 };
 
+/** Follows a task's optional link — a Library item jumps there (via useUiFocusStore's one-shot
+ * highlight target), a URL opens externally, a file/folder opens locally. Shared by goal-level task
+ * rows, milestone sub-task rows, and the top-level Quick Tasks section, since a task's link works the
+ * same way regardless of where it's currently filed. */
+function openTaskLink(task: Task, onNavigate: (s: ScreenId) => void) {
+  if (task.linkType === 'book' && task.linkTargetId) {
+    useUiFocusStore.getState().setLibraryFocus({ type: 'book', id: task.linkTargetId });
+    onNavigate('library');
+  } else if (task.linkType === 'video' && task.linkTargetId) {
+    useUiFocusStore.getState().setLibraryFocus({ type: 'video', id: task.linkTargetId });
+    onNavigate('library');
+  } else if (task.linkType === 'url' && task.linkPath) {
+    getApi().system.openExternal(task.linkPath);
+  } else if (task.linkPath) {
+    getApi().system.openLocalPath(task.linkPath);
+  }
+}
+
+/** The small icon button that opens a task's link (if it has one) — grayed out and disabled when
+ * it's a file/folder link added on a different machine than the one currently viewing it. */
+function TaskLinkButton({
+  task,
+  hostname,
+  onNavigate,
+}: {
+  task: Task;
+  hostname: string | null;
+  onNavigate: (s: ScreenId) => void;
+}) {
+  if (!task.linkType) return null;
+  const linkedOnOtherMachine =
+    (task.linkType === 'file' || task.linkType === 'folder') && task.linkHostname && task.linkHostname !== hostname;
+  return (
+    <button
+      onClick={() => openTaskLink(task, onNavigate)}
+      disabled={!!linkedOnOtherMachine}
+      title={
+        linkedOnOtherMachine
+          ? `Only available on ${task.linkHostname}`
+          : task.linkType === 'book' || task.linkType === 'video'
+            ? 'Open in Library'
+            : task.linkType === 'url'
+              ? 'Open link'
+              : 'Open'
+      }
+      className={clsx('shrink-0', linkedOnOtherMachine ? 'text-muted' : 'text-accentGoals hover:text-accentGoals/80')}
+    >
+      {linkedOnOtherMachine ? (
+        <FileWarning size={14} />
+      ) : task.linkType === 'book' ? (
+        <BookOpen size={14} />
+      ) : task.linkType === 'video' ? (
+        <Play size={14} />
+      ) : task.linkType === 'url' ? (
+        <Link2 size={14} />
+      ) : (
+        <ExternalLink size={14} />
+      )}
+    </button>
+  );
+}
+
 export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }) {
   const { goals, fetchGoals, addGoal, updateGoal, removeGoal, loaded } = useGoalsStore();
-  const { tasks, fetchTasks, loaded: tasksLoaded, addTask, assignTask } = useTasksStore();
+  const { tasks, fetchTasks, loaded: tasksLoaded, addTask, updateTask, setStatus, removeTask, assignTask } = useTasksStore();
   const { byGoalId: milestonesByGoalId, fetchForGoal } = useMilestonesStore();
   const [createOpen, setCreateOpen] = useState(false);
   const [detailGoal, setDetailGoal] = useState<Goal | null>(null);
   const [quickTaskDialogOpen, setQuickTaskDialogOpen] = useState(false);
+  const [editingQuickTask, setEditingQuickTask] = useState<Task | null>(null);
   const [assigningTask, setAssigningTask] = useState<Task | null>(null);
+  const [hostname, setHostname] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loaded) fetchGoals();
     if (!tasksLoaded) fetchTasks();
+    getApi().system.hostname().then(setHostname);
   }, [loaded, fetchGoals, tasksLoaded, fetchTasks]);
 
   // Milestone labels in the assign dialogs (and milestone-linked progress) need every goal's
@@ -161,11 +226,28 @@ export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void 
           <div className="space-y-1.5">
             {quickTasks.map((t) => (
               <div key={t.id} className="flex items-center gap-2.5 rounded-lg bg-surface px-3 py-2.5 text-sm">
+                <div className="w-28 shrink-0">
+                  <Select value={t.status} onChange={(e) => setStatus(t.id, e.target.value as Task['status'])} className="h-7 !py-1 !text-xs">
+                    <option value="todo">To do</option>
+                    <option value="in-progress">In progress</option>
+                    <option value="done">Done</option>
+                  </Select>
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{t.title}</p>
-                  <p className="truncate text-xs text-muted">{t.dueDate ? formatDate(t.dueDate) : 'No due date'}</p>
+                  <p className={clsx('truncate font-medium', t.status === 'done' && 'text-muted line-through')}>{t.title}</p>
+                  <p className="truncate text-xs text-muted">
+                    {t.dueDate ? formatDate(t.dueDate) : 'No due date'}
+                    {t.notes ? ` · ${t.notes}` : ''}
+                  </p>
                 </div>
                 <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
+                <TaskLinkButton task={t} hostname={hostname} onNavigate={onNavigate} />
+                <button onClick={() => setEditingQuickTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
+                  <Pencil size={13} />
+                </button>
+                <button onClick={() => removeTask(t.id)} title="Delete" className="shrink-0 text-muted hover:text-red-500">
+                  <Trash2 size={13} />
+                </button>
                 <Button size="sm" variant="outline" onClick={() => setAssigningTask(t)}>
                   Assign
                 </Button>
@@ -178,6 +260,15 @@ export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void 
       <CreateGoalDialog open={createOpen} onClose={() => setCreateOpen(false)} onCreate={addGoal} />
 
       <TaskDialog open={quickTaskDialogOpen} onClose={() => setQuickTaskDialogOpen(false)} onCreate={addTask} />
+      {editingQuickTask && (
+        <TaskDialog
+          open
+          onClose={() => setEditingQuickTask(null)}
+          task={editingQuickTask}
+          onCreate={addTask}
+          onUpdate={updateTask}
+        />
+      )}
 
       <AssignTaskDialog
         open={!!assigningTask}
@@ -357,20 +448,6 @@ function GoalDetailDialog({
     const mime = IMAGE_MIME_BY_EXT[ext];
     if (!mime) return; // not a recognized image file — silently ignore rather than store garbage
     await onUpdate(goal.id, { imageUrl: `data:${mime};base64,${base64}` });
-  };
-
-  const openTaskLink = (task: Task) => {
-    if (task.linkType === 'book' && task.linkTargetId) {
-      useUiFocusStore.getState().setLibraryFocus({ type: 'book', id: task.linkTargetId });
-      onNavigate('library');
-    } else if (task.linkType === 'video' && task.linkTargetId) {
-      useUiFocusStore.getState().setLibraryFocus({ type: 'video', id: task.linkTargetId });
-      onNavigate('library');
-    } else if (task.linkType === 'url' && task.linkPath) {
-      getApi().system.openExternal(task.linkPath);
-    } else if (task.linkPath) {
-      getApi().system.openLocalPath(task.linkPath);
-    }
   };
 
   return (
@@ -572,8 +649,6 @@ function GoalDetailDialog({
           ) : (
             <div className="space-y-1.5">
               {goalLevelTasks.map((t) => {
-                const linkedOnOtherMachine =
-                  (t.linkType === 'file' || t.linkType === 'folder') && t.linkHostname && t.linkHostname !== hostname;
                 return (
                   <div key={t.id} className="flex items-center gap-2.5 rounded-lg bg-background px-3 py-2.5 text-sm">
                     <div className="w-28 shrink-0">
@@ -595,37 +670,7 @@ function GoalDetailDialog({
                       </p>
                     </div>
                     <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
-                    {t.linkType && (
-                      <button
-                        onClick={() => openTaskLink(t)}
-                        disabled={!!linkedOnOtherMachine}
-                        title={
-                          linkedOnOtherMachine
-                            ? `Only available on ${t.linkHostname}`
-                            : t.linkType === 'book' || t.linkType === 'video'
-                              ? 'Open in Library'
-                              : t.linkType === 'url'
-                                ? 'Open link'
-                                : 'Open'
-                        }
-                        className={clsx(
-                          'shrink-0',
-                          linkedOnOtherMachine ? 'text-muted' : 'text-accentGoals hover:text-accentGoals/80'
-                        )}
-                      >
-                        {linkedOnOtherMachine ? (
-                          <FileWarning size={14} />
-                        ) : t.linkType === 'book' ? (
-                          <BookOpen size={14} />
-                        ) : t.linkType === 'video' ? (
-                          <Play size={14} />
-                        ) : t.linkType === 'url' ? (
-                          <Link2 size={14} />
-                        ) : (
-                          <ExternalLink size={14} />
-                        )}
-                      </button>
-                    )}
+                    <TaskLinkButton task={t} hostname={hostname} onNavigate={onNavigate} />
                     <button onClick={() => setEditingTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
                       <Pencil size={13} />
                     </button>
