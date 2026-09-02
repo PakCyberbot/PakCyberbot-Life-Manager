@@ -7,6 +7,7 @@
 // between desktop and mobile — this driver is a different way of reading/
 // writing the same schema, not a different schema.
 
+import { Filesystem } from '@capacitor/filesystem';
 import { SQLiteConnection, CapacitorSQLite, type SQLiteDBConnection } from '@capacitor-community/sqlite';
 import { SCHEMA_STATEMENTS } from './schema';
 import { decryptSecretWeb, encryptSecretWeb, SECRET_SETTING_KEYS_WEB } from './secretCryptoWeb';
@@ -62,12 +63,17 @@ export interface MobileDataStore {
   hardRemove(table: string, id: string): Promise<void>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
-  /** A full JSON dump of schema+data (@capacitor-community/sqlite's own exportToJson('full')) — mobile's
-   * local-backup format. Not desktop's raw binary .sqlite file: there's no reliable way to get the native
-   * plugin's internal database file path, so JSON is what's actually available here. */
-  exportToJson(): Promise<unknown>;
-  /** Overwrites the live database from a JSON dump produced by exportToJson(). */
-  importFromJson(data: unknown): Promise<void>;
+  /** The real on-device path of the native SQLite file (via SQLiteDBConnection.getUrl()) — the exact same
+   * raw .sqlite format desktop's electronDriver.ts produces/consumes (this connection is opened with
+   * 'no-encryption', so it's a plain unencrypted SQLite3 file), used for both local backup and Drive
+   * push/pull so a file moves freely between the two apps. Empty string if it couldn't be resolved. */
+  getDatabaseFilePath(): Promise<string>;
+  /** Closes the live connection and overwrites the database file with new raw bytes (base64) — used when
+   * the new bytes arrive as in-memory data (e.g. a picked file's content) rather than another file already
+   * on disk (Drive's pull instead downloads straight to getDatabaseFilePath(), skipping this). The caller
+   * reloads the app afterward; a fresh createCapacitorDataStore() call opens a new connection against the
+   * freshly-written file, no explicit reopen needed here. */
+  importRawDatabase(base64: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -82,6 +88,11 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
       : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
 
   await db.open();
+
+  // Cached once, right after opening — needed by importRawDatabase (below) and by anything reading the
+  // path post-close (Drive pull, via getDatabaseFilePath()), since a closed/reopening connection can't be
+  // relied on to answer getUrl() consistently mid-operation.
+  const dbFilePath = (await db.getUrl()).url ?? '';
 
   for (const statement of SCHEMA_STATEMENTS) await db.execute(statement);
 
@@ -197,21 +208,14 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
       ]);
     },
 
-    async exportToJson(): Promise<unknown> {
-      // exportToJson lives on the per-connection SQLiteDBConnection instance
-      // (db), unlike importFromJson below — confirmed against the installed
-      // package's own .d.ts rather than assumed, since the two methods live
-      // on different classes in this plugin (a real gotcha hit while wiring
-      // this up).
-      const result = await db.exportToJson('full');
-      return result.export;
+    async getDatabaseFilePath(): Promise<string> {
+      return dbFilePath;
     },
 
-    async importFromJson(data: unknown): Promise<void> {
-      // importFromJson lives on the top-level SQLiteConnection manager
-      // (sqlite), not on db, and takes a JSON *string* — not the parsed
-      // object exportToJson() above hands back.
-      await sqlite.importFromJson(JSON.stringify(data));
+    async importRawDatabase(base64: string): Promise<void> {
+      if (!dbFilePath) throw new Error('Could not resolve the database file path.');
+      await sqlite.closeConnection(DB_NAME, false);
+      await Filesystem.writeFile({ path: dbFilePath, data: base64 });
     },
 
     async close(): Promise<void> {

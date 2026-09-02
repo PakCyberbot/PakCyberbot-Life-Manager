@@ -81,7 +81,9 @@ export interface PickedFileOrFolder {
 export interface DialogApi {
   pickPdf(): Promise<string | null>;
   pickExecutable(): Promise<string | null>;
-  pickFileOrFolder(): Promise<PickedFileOrFolder | null>;
+  /** `kind` picks a single-purpose native dialog — required because Windows/Linux can't combine
+   * openFile+openDirectory into one picker (it silently collapses to directory-only if you try). */
+  pickFileOrFolder(kind: 'file' | 'folder'): Promise<PickedFileOrFolder | null>;
 }
 
 export interface YouTubeMeta {

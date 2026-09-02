@@ -258,8 +258,8 @@ function NewLinkDialog({
   const [path, setPath] = useState('');
   const [isFolder, setIsFolder] = useState(true);
 
-  const browse = async () => {
-    const picked = await getApi().dialog.pickFileOrFolder();
+  const browse = async (kind: 'file' | 'folder') => {
+    const picked = await getApi().dialog.pickFileOrFolder(kind);
     if (picked) {
       setPath(picked.path);
       setIsFolder(picked.isFolder);
@@ -284,8 +284,11 @@ function NewLinkDialog({
         <Field label="Path">
           <div className="flex gap-2">
             <Input value={path} readOnly placeholder="No path selected" className="flex-1" />
-            <Button variant="outline" size="sm" onClick={browse} type="button">
-              Browse
+            <Button variant="outline" size="sm" onClick={() => browse('file')} type="button">
+              Browse file
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => browse('folder')} type="button">
+              Browse folder
             </Button>
           </div>
         </Field>

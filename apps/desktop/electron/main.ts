@@ -499,11 +499,15 @@ app.whenReady().then(async () => {
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0];
   });
-  ipcMain.handle('dialog:pickFileOrFolder', async () => {
+  ipcMain.handle('dialog:pickFileOrFolder', async (_e, kind: 'file' | 'folder') => {
     const win = BrowserWindow.getFocusedWindow();
-    // Windows/Linux allow combining these in one dialog with a toggle; only
-    // macOS can't, where this falls back to file-picking only.
-    const options: Electron.OpenDialogOptions = { properties: ['openFile', 'openDirectory'] };
+    // Electron's own docs: on Windows/Linux, combining ['openFile', 'openDirectory']
+    // in one dialog silently collapses to a directory-only picker — there is no
+    // single native dialog offering a real choice between the two on those
+    // platforms, so the caller declares intent up front and gets exactly one
+    // property here. (macOS is the one platform where combining them works as
+    // a toggle, but a single-property dialog works fine there too.)
+    const options: Electron.OpenDialogOptions = { properties: [kind === 'folder' ? 'openDirectory' : 'openFile'] };
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     if (result.canceled || result.filePaths.length === 0) return null;
     const picked = result.filePaths[0];

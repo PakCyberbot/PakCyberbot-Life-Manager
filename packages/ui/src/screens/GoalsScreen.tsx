@@ -525,8 +525,8 @@ function TaskDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkMode, books, videos]);
 
-  const browse = async () => {
-    const picked = await getApi().dialog.pickFileOrFolder();
+  const browse = async (kind: 'file' | 'folder') => {
+    const picked = await getApi().dialog.pickFileOrFolder(kind);
     if (picked) setPickedPath(picked);
   };
 
@@ -631,8 +631,11 @@ function TaskDialog({
         {linkMode === 'path' && (
           <div className="flex gap-2">
             <Input value={pickedPath?.path ?? ''} readOnly placeholder="No file/folder selected" className="flex-1" />
-            <Button variant="outline" size="sm" onClick={browse} type="button">
-              <FolderOpen size={14} /> Browse
+            <Button variant="outline" size="sm" onClick={() => browse('file')} type="button">
+              <FolderOpen size={14} /> File
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => browse('folder')} type="button">
+              <FolderOpen size={14} /> Folder
             </Button>
           </div>
         )}

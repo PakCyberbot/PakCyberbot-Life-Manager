@@ -32,7 +32,7 @@ const api: LifeManagerApi = {
   dialog: {
     pickPdf: () => ipcRenderer.invoke('dialog:pickPdf'),
     pickExecutable: () => ipcRenderer.invoke('dialog:pickExecutable'),
-    pickFileOrFolder: () => ipcRenderer.invoke('dialog:pickFileOrFolder'),
+    pickFileOrFolder: (kind) => ipcRenderer.invoke('dialog:pickFileOrFolder', kind),
   },
   media: {
     fetchYouTubeThumbnail: (url) => ipcRenderer.invoke('media:fetchYouTubeThumbnail', url),

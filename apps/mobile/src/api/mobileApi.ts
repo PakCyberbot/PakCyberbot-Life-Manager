@@ -7,17 +7,17 @@
 // (YouTube oEmbed, Wikipedia lookup, og:image scraping, Drive's API) works
 // here too without hitting WebView CORS restrictions.
 //
-// Phase 1 scope: db/settings, a working subset of system+media, and local
-// backup (export/import) are real. Everything else desktop-only (native file
-// dialogs, AI provider calls, News/Jobs refresh, Drive sync) is a deliberate
-// stub — mobile's UI never calls these in Phase 1 (it's read-mostly and
-// doesn't run its own AI/RSS fetches), but the full LifeManagerApi shape is
-// still implemented so the type contract stays honest rather than silently
-// narrowed.
+// Phase 1 scope: db/settings, a working subset of system+media, local
+// backup (export/import), and Drive sync are real. Everything else desktop-
+// only (native file dialogs, AI provider calls, News/Jobs refresh) is a
+// deliberate stub — mobile's UI never calls these in Phase 1 (it's read-
+// mostly and doesn't run its own AI/RSS fetches), but the full
+// LifeManagerApi shape is still implemented so the type contract stays
+// honest rather than silently narrowed.
 
 import { Browser } from '@capacitor/browser';
 import { Device } from '@capacitor/device';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import type {
   AiApi,
@@ -37,6 +37,7 @@ import type {
   SystemApi,
 } from '@life-manager/core';
 import type { MobileDataStore } from '@life-manager/db/src/capacitorDriver';
+import { createMobileDriveSync } from '../drive/mobileDriveSync';
 
 const NOT_AVAILABLE = 'Not available on mobile in this version.';
 
@@ -235,41 +236,52 @@ function buildSystem(): SystemApi {
 const dialog: DialogApi = {
   pickPdf: async () => null,
   pickExecutable: async () => null,
-  pickFileOrFolder: async () => null,
+  pickFileOrFolder: async (_kind) => null,
 };
 
-const drive: DriveApi = {
-  status: async () => ({ connected: false, email: null, lastPushedAt: null, lastPulledAt: null }),
-  connect: async () => ({ ok: false, error: NOT_AVAILABLE }),
-  disconnect: async () => {},
-  push: async () => ({ ok: false, error: NOT_AVAILABLE }),
-  pull: async () => ({ ok: false, error: NOT_AVAILABLE }),
-};
+// The literal 16-byte SQLite header, byte-for-byte — same check, same exact
+// string (not a space or other whitespace where the null byte goes) as
+// desktop's db:import handler in main.ts, verified against a real DB file's
+// actual bytes there. A picked file that doesn't start with this is rejected
+// up front rather than handed to importRawDatabase and failing confusingly
+// deep inside the native plugin.
+const SQLITE_MAGIC = 'SQLite format 3\0';
 
-// Mobile's local backup — the same idea as desktop's export/import, but a
-// different format: exportToJson()/importFromJson() (see capacitorDriver.ts)
-// dump/restore the whole database as JSON, since there's no reliable way to
-// get the native SQLite plugin's internal file path the way desktop reads
-// its .sqlite file directly. Export writes the JSON to the cache dir then
-// hands it to the native Share sheet (there's no "Save As" dialog concept on
-// Android) so the user picks where it actually ends up — Drive, Files,
-// email. Import uses a plain HTML file input: a Capacitor WebView is real
-// Chromium, so this already opens the native document picker with no extra
-// plugin needed.
+async function looksLikeSqlite(file: File): Promise<boolean> {
+  const header = await file.slice(0, SQLITE_MAGIC.length).text();
+  return header === SQLITE_MAGIC;
+}
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Mobile's local backup — the exact same raw .sqlite file format desktop's
+// db:export/db:import use (see capacitorDriver.ts's getDatabaseFilePath/
+// importRawDatabase), so a backup is interchangeable between the two apps.
+// Export copies the live database file to the cache dir (a plain file copy —
+// no JS-side byte handling) then hands it to the native Share sheet (there's
+// no "Save As" dialog concept on Android) so the user picks where it actually
+// ends up — Drive, Files, email. Import uses a plain HTML file input: a
+// Capacitor WebView is real Chromium, so this already opens the native
+// document picker with no extra plugin needed.
 function buildBackup(store: MobileDataStore): BackupApi {
   return {
     async exportDatabase(): Promise<BackupResult> {
       try {
-        const data = await store.exportToJson();
-        const json = JSON.stringify(data);
-        const fileName = `life-manager-backup-${new Date().toISOString().slice(0, 10)}.json`;
-        const written = await Filesystem.writeFile({
-          path: fileName,
-          data: json,
-          directory: Directory.Cache,
-          encoding: Encoding.UTF8,
-        });
-        await Share.share({ title: 'PakCyberbot Life Manager backup', url: written.uri });
+        const dbFilePath = await store.getDatabaseFilePath();
+        if (!dbFilePath) return { ok: false, error: 'Could not locate the database file on this device.' };
+        const fileName = `life-manager-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
+        const copied = await Filesystem.copy({ from: dbFilePath, to: fileName, toDirectory: Directory.Cache });
+        await Share.share({ title: 'PakCyberbot Life Manager backup', url: copied.uri });
         return { ok: true, path: fileName };
       } catch (err) {
         return { ok: false, error: String(err) };
@@ -280,7 +292,6 @@ function buildBackup(store: MobileDataStore): BackupApi {
       return new Promise<BackupResult>((resolve) => {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'application/json,.json';
         input.style.display = 'none';
         const cleanup = () => input.remove();
 
@@ -296,25 +307,19 @@ function buildBackup(store: MobileDataStore): BackupApi {
             resolve({ ok: false, cancelled: true });
             return;
           }
-          file
-            .text()
-            .then(async (text) => {
-              const parsed = JSON.parse(text);
-              // Same "verify before trusting" discipline as desktop's SQLite-header check before
-              // overwriting anything — reject a wrong-shaped file up front rather than handing it
-              // to importFromJson and failing confusingly deep inside the native plugin.
-              if (!parsed || !Array.isArray(parsed.tables)) {
-                resolve({ ok: false, error: "That file doesn't look like a Life Manager backup." });
-                return;
-              }
-              await store.importFromJson(parsed);
-              resolve({ ok: true, path: file.name });
-              // Mirrors desktop's app.relaunch() after an import — the simplest way to guarantee
-              // every store reflects the freshly-imported data rather than hand-refetching each
-              // one. Delayed slightly so the caller's own success message has a moment to show.
-              setTimeout(() => window.location.reload(), 400);
-            })
-            .catch((err) => resolve({ ok: false, error: String(err) }));
+          (async () => {
+            if (!(await looksLikeSqlite(file))) {
+              resolve({ ok: false, error: "That file doesn't look like a SQLite database (bad header)." });
+              return;
+            }
+            const base64 = await readFileAsBase64(file);
+            await store.importRawDatabase(base64);
+            resolve({ ok: true, path: file.name });
+            // Mirrors desktop's app.relaunch() after an import — the simplest way to guarantee
+            // every store reflects the freshly-imported data rather than hand-refetching each
+            // one. Delayed slightly so the caller's own success message has a moment to show.
+            setTimeout(() => window.location.reload(), 400);
+          })().catch((err) => resolve({ ok: false, error: String(err) }));
         });
 
         document.body.appendChild(input);
@@ -349,7 +354,7 @@ export function buildMobileApi(store: MobileDataStore): LifeManagerApi {
     system: buildSystem(),
     dialog,
     media,
-    drive,
+    drive: createMobileDriveSync(store),
     backup: buildBackup(store),
     news,
     entertainment,
