@@ -9,6 +9,8 @@ import { Field, Input, Textarea } from '../components/ui/FormControls';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { EmptyState } from '../components/ui/EmptyState';
 import { TimeTableClock } from '../components/timetable/ClockView';
+import { LiveRotatingClock } from '../components/timetable/LiveRotatingClock';
+import { useClockStyle } from '../lib/clockStylePreference';
 import clsx from 'clsx';
 
 const SLOT_COLORS: { value: string; className: string }[] = [
@@ -30,6 +32,7 @@ export function TimeTableScreen() {
     useTimeTableStore();
   const [dayOfWeek, setDayOfWeek] = useState(() => new Date().getDay());
   const [view, setView] = useState<View>('list');
+  const [clockStyle] = useClockStyle();
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
@@ -161,7 +164,11 @@ export function TimeTableScreen() {
               }
             />
           ) : view === 'clock' ? (
-            <TimeTableClock schedule={schedule} slots={daySlots} />
+            clockStyle === 'liveRotating' ? (
+              <LiveRotatingClock />
+            ) : (
+              <TimeTableClock schedule={schedule} slots={daySlots} />
+            )
           ) : (
             <div className="space-y-1.5">
               {daySlots.map((slot) => (

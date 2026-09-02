@@ -33,6 +33,7 @@ import { getApi, useAiStatusStore, useJobsStore, useNewsStore, useQuotesStore, u
 import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
+import { useClockStyle, type ClockStyle } from '../lib/clockStylePreference';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Switch } from '../components/ui/Switch';
@@ -42,6 +43,7 @@ import clsx from 'clsx';
 export function SettingsScreen() {
   const { readerPath, readerType, currency, loaded, load, setReader, autoDetectReader, clearReader, setCurrency } =
     useSettingsStore();
+  const [clockStyle, setClockStyle] = useClockStyle();
   const [detecting, setDetecting] = useState(false);
   const [currencyDraft, setCurrencyDraft] = useState(currency);
 
@@ -76,9 +78,23 @@ export function SettingsScreen() {
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
         </CardHeader>
-        <CardContent className="flex items-center justify-between">
-          <p className="text-sm text-muted">Light, dark, or match your system.</p>
-          <ThemeToggle />
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted">Light, dark, or match your system.</p>
+            <ThemeToggle />
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            <div>
+              <p className="text-sm font-medium">Time Table clock</p>
+              <p className="text-xs text-muted">Which clock face the Time Table's Clock view shows.</p>
+            </div>
+            <div className="w-48 shrink-0">
+              <Select value={clockStyle} onChange={(e) => setClockStyle(e.target.value as ClockStyle)}>
+                <option value="classic">Classic view</option>
+                <option value="liveRotating">Live Rotating Clock view</option>
+              </Select>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
