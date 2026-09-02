@@ -46,7 +46,7 @@ const HAND_LENGTH = 82;
 // verification script for the harder ring case had.
 const RING_SAMPLES = 240;
 /** Floor of the forward-spotlight fade — see dimOpacityAt below. */
-const PAST_FLOOR_OPACITY = 0.3;
+const PAST_FLOOR_OPACITY = 0.1;
 const TRANSITION = { transition: 'opacity 300ms ease' };
 
 function polarToCartesian(radius: number, angleDeg: number) {
