@@ -21,28 +21,31 @@ import clsx from 'clsx';
 // The whole face also acts like a forward-looking spotlight: whatever the
 // hand has already swept past *this revolution* — meaning it's now showing
 // what's next (12h away) rather than today's still-upcoming occurrence —
-// dims down, while the not-yet-swept, still-relevant-today half stays at
-// full brightness. Below the face, an "Up next" stack lists the slots
-// still to come today soonest-first, with a live countdown.
+// fades smoothly from full brightness right where the hand just passed
+// down to a dim floor at whatever was passed longest ago, while anything
+// still ahead (not yet swept, still relevant today) stays fully bright.
+// The fade recomputes every tick, so it visibly creeps forward with the
+// hand rather than jumping in discrete hourly steps. Below the face, an
+// "Up next" stack lists the slots still to come today soonest-first, with
+// a live countdown.
 
-const SIZE = 240;
+const SIZE = 280;
 const CENTER = SIZE / 2;
-const FACE_RADIUS = 96;
-const RING_OUTER = 88;
-const RING_WIDTH = 12;
+const FACE_RADIUS = 112;
+const RING_OUTER = 103;
+const RING_WIDTH = 14;
 const RING_INNER = RING_OUTER - RING_WIDTH;
-const HAND_LENGTH = 70;
+const HAND_LENGTH = 82;
 // Sampled as many thin radial slivers rather than exact arc paths — the ring's "which hour is
 // currently effective" mapping flips at a point that moves continuously with the hand (see
 // effectiveHourAt below), so finding exact arc-segment boundaries analytically would need tracking
 // that moving flip point *and* every slot/sleep boundary at once. Sampling finely (1.5° apart, well
-// below what the eye can resolve as separate slivers on a 240px face) gets the same visual result
+// below what the eye can resolve as separate slivers on a 280px face) gets the same visual result
 // with far less to get subtly wrong — same "verify, don't over-engineer" bias as this file's own
 // verification script for the harder ring case had.
 const RING_SAMPLES = 240;
-/** Opacity multiplier for whatever's behind the hand (already swept this revolution) — dimmed to
- * read as "past, showing what's next" rather than "happening now," without hiding it outright. */
-const BEHIND_HAND_DIM = 0.32;
+/** Floor of the forward-spotlight fade — see dimOpacityAt below. */
+const PAST_FLOOR_OPACITY = 0.3;
 const TRANSITION = { transition: 'opacity 300ms ease' };
 
 function polarToCartesian(radius: number, angleDeg: number) {
@@ -71,16 +74,24 @@ interface DialPosition {
   label: number; // 1–12, the number printed on the dial
   angle: number; // degrees, 0 = 12 o'clock, clockwise
   isPM: boolean;
-  behindHand: boolean;
+  dim: number; // 0.3–1, see dimOpacityAt
 }
 
-/** Whether a dial position `p` (0, 12] — 12 representing the top/angle-0 position, same convention
- * as everywhere else in this file — has already been swept by the hand during its current
- * revolution. The hand sweeps 0→12 once every 12h; `p < handP` means "already passed this pass,"
- * true regardless of which 12h half of the day it currently is. */
-function isBehindHand(p: number, decimalHours: number): boolean {
+/** Continuous forward-spotlight opacity for dial position `p` (0, 12]: full brightness (1) anywhere
+ * still ahead of the hand this revolution (not yet passed, so still showing today's still-upcoming
+ * occurrence); the moment the hand passes a position it starts fading, reaching PAST_FLOOR_OPACITY at
+ * the position passed longest ago (right at the far edge of what's been swept so far). Normalized
+ * against how much of the revolution the hand has swept (`handP` itself) rather than a fixed 12h
+ * span, so the fade always visibly covers the *whole* passed arc — early in a revolution that arc is
+ * short and the fade compresses into it; later it's most of the circle and the fade stretches across
+ * all of it. Recomputed every tick (the hand moves continuously), so the fade visibly shifts with
+ * every small movement, not just once an hour. */
+function dimOpacityAt(p: number, decimalHours: number): number {
   const handP = decimalHours % 12;
-  return p < handP;
+  if (p >= handP) return 1;
+  const hoursAgo = handP - p;
+  const fraction = handP > 0 ? hoursAgo / handP : 0;
+  return 1 - fraction * (1 - PAST_FLOOR_OPACITY);
 }
 
 /** For dial position `label` (1–12), its AM occurrence is hour `hourAM` (24h) and its PM occurrence
@@ -100,7 +111,7 @@ function computePositions(decimalHours: number): DialPosition[] {
   return Array.from({ length: 12 }, (_, i) => {
     const label = i === 0 ? 12 : i;
     const p = i === 0 ? 12 : i;
-    return { label, angle: i * 30, isPM: isPmForLabel(label, decimalHours), behindHand: isBehindHand(p, decimalHours) };
+    return { label, angle: i * 30, isPM: isPmForLabel(label, decimalHours), dim: dimOpacityAt(p, decimalHours) };
   });
 }
 
@@ -168,7 +179,7 @@ export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule |
             if (!hit) return null;
             const outer = polarToCartesian(RING_OUTER, angle);
             const inner = polarToCartesian(RING_INNER, angle);
-            const dim = isBehindHand(p, decimalHours) ? BEHIND_HAND_DIM : 1;
+            const dim = dimOpacityAt(p, decimalHours);
             return (
               <line
                 key={i}
@@ -191,7 +202,7 @@ export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule |
             const p = angle === 0 ? 12 : angle / 30;
             const outer = polarToCartesian(FACE_RADIUS, angle);
             const inner = polarToCartesian(FACE_RADIUS - (isHourTick ? 8 : 4), angle);
-            const dim = isBehindHand(p, decimalHours) ? BEHIND_HAND_DIM : 1;
+            const dim = dimOpacityAt(p, decimalHours);
             return (
               <line
                 key={i}
@@ -210,9 +221,8 @@ export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule |
           {/* hour number + its live-flipping AM/PM suffix, dimmed once the hand has swept past it */}
           {positions.map((pos) => {
             const numberPos = polarToCartesian(RING_INNER - 15, pos.angle);
-            const dim = pos.behindHand ? BEHIND_HAND_DIM + 0.25 : 1; // a touch brighter floor than the ring, stays legible
             return (
-              <g key={pos.label} style={TRANSITION} opacity={dim}>
+              <g key={pos.label} style={TRANSITION} opacity={pos.dim}>
                 <text x={numberPos.x} y={numberPos.y - 5} textAnchor="middle" dominantBaseline="middle" fontSize={13} fontWeight={600} fill="rgb(var(--color-foreground))">
                   {pos.label}
                 </text>
