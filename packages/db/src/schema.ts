@@ -108,6 +108,8 @@ export const SCHEMA_STATEMENTS: string[] = [
     updatedAt TEXT NOT NULL,
     deletedAt TEXT
   )`,
+  // purchaseEntryId links a 'done' item to the exact savingsEntries row created for it, so undoing
+  // (back to planned/cancelled) removes precisely that transaction rather than re-deriving one.
   `CREATE TABLE IF NOT EXISTS wishlistItems (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -115,6 +117,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     estimatedCost REAL,
     notes TEXT,
     status TEXT NOT NULL DEFAULT 'planned',
+    purchaseEntryId TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Gift, Minus, Plane, Plus, Repeat, ShoppingBag, TrendingUp, Trash2, Wallet } from 'lucide-react';
+import { Gift, Minus, Pencil, Plane, Plus, Repeat, ShoppingBag, TrendingUp, Trash2, Wallet } from 'lucide-react';
 import { computeTotalSavings, useMoneyStore, useSettingsStore } from '@life-manager/core';
 import {
   formatCurrency,
@@ -7,6 +7,7 @@ import {
   isSameMonth,
   type SavingsEntryType,
   type WishlistCategory,
+  type WishlistItem,
   type WishlistStatus,
 } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -36,6 +37,7 @@ export function MoneyScreen() {
   const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
   const [entryDialogOpen, setEntryDialogOpen] = useState(false);
   const [wishlistDialogOpen, setWishlistDialogOpen] = useState(false);
+  const [editingWishlistItem, setEditingWishlistItem] = useState<WishlistItem | null>(null);
 
   useEffect(() => {
     if (!loaded) fetchAll();
@@ -173,6 +175,9 @@ export function MoneyScreen() {
                           <option value="cancelled">Cancelled</option>
                         </Select>
                       </div>
+                      <button onClick={() => setEditingWishlistItem(w)} className="shrink-0 text-muted hover:text-foreground">
+                        <Pencil size={13} />
+                      </button>
                       <button onClick={() => removeWishlistItem(w.id)} className="shrink-0 text-muted hover:text-red-500">
                         <Trash2 size={13} />
                       </button>
@@ -187,6 +192,9 @@ export function MoneyScreen() {
 
       <NewEntryDialog open={entryDialogOpen} onClose={() => setEntryDialogOpen(false)} />
       <NewWishlistDialog open={wishlistDialogOpen} onClose={() => setWishlistDialogOpen(false)} />
+      {editingWishlistItem && (
+        <EditWishlistDialog item={editingWishlistItem} onClose={() => setEditingWishlistItem(null)} />
+      )}
     </div>
   );
 }
@@ -294,12 +302,75 @@ function NewWishlistDialog({ open, onClose }: { open: boolean; onClose: () => vo
         <Field label="Notes (optional)">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </Field>
+        <p className="text-xs text-muted">
+          Marking this "Done" later will log an expense for the cost above and deduct it from your total
+          savings automatically.
+        </p>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button onClick={submit} disabled={!title.trim()}>
             Add to wishlist
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
+function EditWishlistDialog({ item, onClose }: { item: WishlistItem; onClose: () => void }) {
+  const { editWishlistItem } = useMoneyStore();
+  const [title, setTitle] = useState(item.title);
+  const [category, setCategory] = useState<WishlistCategory>(item.category);
+  const [estimatedCost, setEstimatedCost] = useState(item.estimatedCost != null ? String(item.estimatedCost) : '');
+  const [notes, setNotes] = useState(item.notes ?? '');
+
+  const submit = async () => {
+    if (!title.trim()) return;
+    await editWishlistItem(item.id, {
+      title: title.trim(),
+      category,
+      estimatedCost: estimatedCost ? Number(estimatedCost) : null,
+      notes: notes.trim() || null,
+    });
+    onClose();
+  };
+
+  return (
+    <Dialog open onClose={onClose} title="Edit wishlist item">
+      <div className="space-y-3">
+        <Field label="Title">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Category">
+            <Select value={category} onChange={(e) => setCategory(e.target.value as WishlistCategory)}>
+              <option value="purchase">Purchase</option>
+              <option value="trip">Trip</option>
+              <option value="subscription">Subscription</option>
+              <option value="investment">Investment</option>
+              <option value="other">Other</option>
+            </Select>
+          </Field>
+          <Field label={item.status === 'done' ? 'Actual cost' : 'Estimated cost'}>
+            <Input type="number" min={0} step="0.01" value={estimatedCost} onChange={(e) => setEstimatedCost(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Notes (optional)">
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        {item.status === 'done' && item.purchaseEntryId && (
+          <p className="text-xs text-muted">
+            Already marked done — changing the cost updates the linked savings transaction to match.
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!title.trim()}>
+            Save changes
           </Button>
         </div>
       </div>

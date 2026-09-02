@@ -35,12 +35,17 @@ interface MoneyState {
   loaded: boolean;
   fetchAll: () => Promise<void>;
 
-  addEntry: (input: NewSavingsEntryInput) => Promise<void>;
+  addEntry: (input: NewSavingsEntryInput) => Promise<SavingsEntry>;
   updateEntry: (id: string, patch: Partial<SavingsEntry>) => Promise<void>;
   removeEntry: (id: string) => Promise<void>;
 
   addWishlistItem: (input: NewWishlistItemInput) => Promise<void>;
   updateWishlistItem: (id: string, patch: Partial<WishlistItem>) => Promise<void>;
+  /** Edits a wishlist item's own fields — and, if the cost changes on an already-'done' item, keeps
+   * its linked savings transaction's amount in sync (the item was cheaper/pricier than estimated). */
+  editWishlistItem: (id: string, patch: NewWishlistItemInput) => Promise<void>;
+  /** Marking 'done' (with a cost set) creates a matching savings expense entry; leaving 'done' (back to
+   * planned, or cancelled) removes that exact entry again — see structure.md's Money section. */
   setWishlistStatus: (id: string, status: WishlistStatus) => Promise<void>;
   removeWishlistItem: (id: string) => Promise<void>;
 }
@@ -73,6 +78,7 @@ export const useMoneyStore = create<MoneyState>((set, get) => ({
     };
     await getApi().db.create('savingsEntries', entry);
     set({ entries: [entry, ...get().entries] });
+    return entry;
   },
 
   async updateEntry(id, patch) {
@@ -94,6 +100,7 @@ export const useMoneyStore = create<MoneyState>((set, get) => ({
       estimatedCost: input.estimatedCost ?? null,
       notes: input.notes ?? null,
       status: 'planned',
+      purchaseEntryId: null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,
@@ -108,7 +115,54 @@ export const useMoneyStore = create<MoneyState>((set, get) => ({
     set({ wishlist: get().wishlist.map((w) => (w.id === id ? { ...w, ...patch, updatedAt } : w)) });
   },
 
+  async editWishlistItem(id, patch) {
+    const item = get().wishlist.find((w) => w.id === id);
+    await get().updateWishlistItem(id, {
+      title: patch.title,
+      category: patch.category,
+      estimatedCost: patch.estimatedCost ?? null,
+      notes: patch.notes ?? null,
+    });
+    // Purchased, and the price turned out cheaper/pricier than estimated — keep the already-deducted
+    // transaction honest rather than leaving it at the old estimate.
+    if (item?.status === 'done' && item.purchaseEntryId && patch.estimatedCost != null) {
+      await get().updateEntry(item.purchaseEntryId, { amount: patch.estimatedCost });
+    }
+  },
+
   async setWishlistStatus(id, status) {
+    const item = get().wishlist.find((w) => w.id === id);
+    if (!item) return;
+
+    if (status === 'done' && item.status !== 'done') {
+      if (item.purchaseEntryId) {
+        // Already linked (shouldn't normally happen — leaving 'done' clears it) — just flip status.
+        await get().updateWishlistItem(id, { status });
+        return;
+      }
+      if (item.estimatedCost && item.estimatedCost > 0) {
+        const entry = await get().addEntry({
+          amount: item.estimatedCost,
+          type: 'expense',
+          note: `Purchased: ${item.title}`,
+          date: nowIso().slice(0, 10),
+        });
+        await get().updateWishlistItem(id, { status, purchaseEntryId: entry.id });
+      } else {
+        // Nothing to deduct — no cost was ever set.
+        await get().updateWishlistItem(id, { status });
+      }
+      return;
+    }
+
+    if (status !== 'done' && item.status === 'done' && item.purchaseEntryId) {
+      // Leaving 'done' (back to planned, or cancelled) undoes the deduction — no phantom transaction
+      // should survive the item no longer being marked purchased.
+      await get().removeEntry(item.purchaseEntryId);
+      await get().updateWishlistItem(id, { status, purchaseEntryId: null });
+      return;
+    }
+
     await get().updateWishlistItem(id, { status });
   },
 

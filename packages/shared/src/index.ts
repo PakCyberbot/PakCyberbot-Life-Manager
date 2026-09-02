@@ -127,6 +127,9 @@ export interface WishlistItem extends BaseRow {
   estimatedCost?: number | null;
   notes?: string | null;
   status: WishlistStatus;
+  /** The SavingsEntry created when this item was marked 'done', so undoing removes exactly that
+   * transaction. Null until purchased, cleared again when un-done. */
+  purchaseEntryId?: ID | null;
 }
 
 // ---------------------------------------------------------------------------
