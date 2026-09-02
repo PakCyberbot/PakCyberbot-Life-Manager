@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(LoopbackAuthPlugin.class);
     registerPlugin(LocalFileOpenerPlugin.class);
+    registerPlugin(ShareIntentPlugin.class);
     super.onCreate(savedInstanceState);
   }
 }

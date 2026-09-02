@@ -4,6 +4,7 @@ import { ThemeProvider } from '@life-manager/ui';
 import { MobileShell } from './layout/MobileShell';
 import type { MobileScreenId } from './navigation';
 import { scheduleTimeTableNotifications, TIME_TABLE_NOTIFICATIONS_SETTING_KEY } from './notifications/timeTableNotifications';
+import { useShareIntentCapture } from './native/useShareIntentCapture';
 import { MobileDashboardScreen } from './screens/MobileDashboardScreen';
 import { MobileLibraryScreen } from './screens/MobileLibraryScreen';
 import { MoreScreen } from './screens/MoreScreen';
@@ -21,6 +22,8 @@ export function App() {
   const [screen, setScreen] = useState<MobileScreenId>('dashboard');
   const { loaded, load } = useSettingsStore();
   const { slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
+
+  useShareIntentCapture(setScreen);
 
   useEffect(() => {
     if (!loaded) load();
