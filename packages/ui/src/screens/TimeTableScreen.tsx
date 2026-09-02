@@ -165,7 +165,7 @@ export function TimeTableScreen() {
             />
           ) : view === 'clock' ? (
             clockStyle === 'liveRotating' ? (
-              <LiveRotatingClock />
+              <LiveRotatingClock schedule={schedule} slots={daySlots} />
             ) : (
               <TimeTableClock schedule={schedule} slots={daySlots} />
             )
