@@ -1,7 +1,7 @@
 {
   "name": "@life-manager/mobile",
   "productName": "PakCyberbot Life Manager",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Mobile companion for PakCyberbot Life Manager — read-mostly, syncs via the same Google Drive backup, with an editable Library for quick-saving shared links.",
   "private": true,
   "type": "module",

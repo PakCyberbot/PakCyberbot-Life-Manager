@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, ThemeToggle, Switch, Button, Badge, Field, Input } from '@life-manager/ui';
-import { getApi, useTimeTableStore } from '@life-manager/core';
-import type { DriveStatus } from '@life-manager/core';
+import { Card, CardContent, CardHeader, CardTitle, ThemeToggle, Switch, Button, Badge, Field, Input, Select } from '@life-manager/ui';
+import { getApi, useSettingsStore, useTimeTableStore } from '@life-manager/core';
+import type { ClockStyle, DriveStatus } from '@life-manager/core';
 import { Bell, Cloud, CloudOff, Download, ExternalLink, Upload } from 'lucide-react';
 import { SectionHeader } from '../components/SectionHeader';
 import type { MobileScreenId } from '../navigation';
@@ -20,8 +20,9 @@ export function MobileSettingsScreen({ onNavigate }: { onNavigate: (s: MobileScr
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <ThemeToggle />
+            <ClockStyleField />
           </CardContent>
         </Card>
 
@@ -30,6 +31,21 @@ export function MobileSettingsScreen({ onNavigate }: { onNavigate: (s: MobileScr
         <DriveSyncCard />
       </div>
     </div>
+  );
+}
+
+// Same DB-backed clockStyle setting desktop's Settings screen exposes (useSettingsStore, not
+// localStorage — meant to carry over between devices via Drive sync). App.tsx already calls
+// useSettingsStore().load() on boot, so this just reads/writes the already-loaded value.
+function ClockStyleField() {
+  const { clockStyle, setClockStyle } = useSettingsStore();
+  return (
+    <Field label="Time Table clock">
+      <Select value={clockStyle} onChange={(e) => setClockStyle(e.target.value as ClockStyle)}>
+        <option value="classic">Classic view</option>
+        <option value="liveRotating">Live Rotating Clock view</option>
+      </Select>
+    </Field>
   );
 }
 
