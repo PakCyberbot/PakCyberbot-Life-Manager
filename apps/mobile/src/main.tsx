@@ -1,9 +1,19 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { StatusBar } from '@capacitor/status-bar';
 import { createCapacitorDataStore } from '@life-manager/db/src/capacitorDriver';
 import { buildMobileApi } from './api/mobileApi';
 import { App } from './App';
 import './index.css';
+
+// The WebView draws edge-to-edge by default, so unstyled content collides
+// with the system status bar (confirmed live: the Dashboard's date/greeting
+// rendered underneath the clock/battery icons). `overlay: false` pushes the
+// WebView's content below the status bar at the native layer — more robust
+// than relying on CSS env(safe-area-inset-top), which behaves inconsistently
+// across OEM WebViews. No-ops harmlessly (rejects silently) in a plain
+// browser during `npm run mobile:dev`, where there's no native status bar.
+StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
 
 // Unlike Electron's preload script (window.api exists before the renderer's
 // first paint), opening a native SQLite connection here is genuinely async —

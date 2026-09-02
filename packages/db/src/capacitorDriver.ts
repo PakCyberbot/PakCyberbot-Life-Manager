@@ -62,6 +62,12 @@ export interface MobileDataStore {
   hardRemove(table: string, id: string): Promise<void>;
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string): Promise<void>;
+  /** A full JSON dump of schema+data (@capacitor-community/sqlite's own exportToJson('full')) — mobile's
+   * local-backup format. Not desktop's raw binary .sqlite file: there's no reliable way to get the native
+   * plugin's internal database file path, so JSON is what's actually available here. */
+  exportToJson(): Promise<unknown>;
+  /** Overwrites the live database from a JSON dump produced by exportToJson(). */
+  importFromJson(data: unknown): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -189,6 +195,23 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
         key,
         stored,
       ]);
+    },
+
+    async exportToJson(): Promise<unknown> {
+      // exportToJson lives on the per-connection SQLiteDBConnection instance
+      // (db), unlike importFromJson below — confirmed against the installed
+      // package's own .d.ts rather than assumed, since the two methods live
+      // on different classes in this plugin (a real gotcha hit while wiring
+      // this up).
+      const result = await db.exportToJson('full');
+      return result.export;
+    },
+
+    async importFromJson(data: unknown): Promise<void> {
+      // importFromJson lives on the top-level SQLiteConnection manager
+      // (sqlite), not on db, and takes a JSON *string* — not the parsed
+      // object exportToJson() above hands back.
+      await sqlite.importFromJson(JSON.stringify(data));
     },
 
     async close(): Promise<void> {

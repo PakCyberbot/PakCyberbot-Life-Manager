@@ -64,7 +64,7 @@ Sync is built in but needs your own free Google OAuth credential — there's no 
 
 A read-mostly companion for quick glances on the go — not a port of the desktop UI. Dashboard shows the same goals/events/savings/quotes as desktop plus today's Time Table as a Clock view; every other module is view-only; **Library** (books/videos/web links) is the one editable section, for quickly saving something to look at later.
 
-**Phase 1 (done)**: its own local data (a real on-device SQLite database, same schema as desktop), a full read-only UI for every module, and an editable Library with manual add. **Phase 2 (not started)**: Android share-intent capture (share a link straight into Library from any app) and Drive sync from the phone.
+**Phase 1 (done)**: its own local data (a real on-device SQLite database, same schema as desktop), a full read-only UI for every module, an editable Library with manual add, weekly local notifications when a Time Table slot starts (toggle in Settings), and a local backup (export/import as a file — a different format from desktop's, since there's no reliable way to read the native SQLite plugin's file path on mobile). **Phase 2 (not started)**: Android share-intent capture (share a link straight into Library from any app) and Drive sync from the phone.
 
 ```sh
 npm install                 # covers apps/mobile too (same npm workspaces)

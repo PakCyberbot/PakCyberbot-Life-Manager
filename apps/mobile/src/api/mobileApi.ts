@@ -7,18 +7,22 @@
 // (YouTube oEmbed, Wikipedia lookup, og:image scraping, Drive's API) works
 // here too without hitting WebView CORS restrictions.
 //
-// Phase 1 scope: db/settings/a working subset of system+media are real.
-// Everything desktop-only (native file dialogs, AI provider calls, News/Jobs
-// refresh, Drive sync, local backup) is a deliberate stub — mobile's UI never
-// calls these in Phase 1 (it's read-mostly and doesn't run its own AI/RSS
-// fetches), but the full LifeManagerApi shape is still implemented so the
-// type contract stays honest rather than silently narrowed.
+// Phase 1 scope: db/settings, a working subset of system+media, and local
+// backup (export/import) are real. Everything else desktop-only (native file
+// dialogs, AI provider calls, News/Jobs refresh, Drive sync) is a deliberate
+// stub — mobile's UI never calls these in Phase 1 (it's read-mostly and
+// doesn't run its own AI/RSS fetches), but the full LifeManagerApi shape is
+// still implemented so the type contract stays honest rather than silently
+// narrowed.
 
 import { Browser } from '@capacitor/browser';
 import { Device } from '@capacitor/device';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 import type {
   AiApi,
   BackupApi,
+  BackupResult,
   DbApi,
   DialogApi,
   DriveApi,
@@ -242,10 +246,83 @@ const drive: DriveApi = {
   pull: async () => ({ ok: false, error: NOT_AVAILABLE }),
 };
 
-const backup: BackupApi = {
-  exportDatabase: async () => ({ ok: false, error: NOT_AVAILABLE }),
-  importDatabase: async () => ({ ok: false, error: NOT_AVAILABLE }),
-};
+// Mobile's local backup — the same idea as desktop's export/import, but a
+// different format: exportToJson()/importFromJson() (see capacitorDriver.ts)
+// dump/restore the whole database as JSON, since there's no reliable way to
+// get the native SQLite plugin's internal file path the way desktop reads
+// its .sqlite file directly. Export writes the JSON to the cache dir then
+// hands it to the native Share sheet (there's no "Save As" dialog concept on
+// Android) so the user picks where it actually ends up — Drive, Files,
+// email. Import uses a plain HTML file input: a Capacitor WebView is real
+// Chromium, so this already opens the native document picker with no extra
+// plugin needed.
+function buildBackup(store: MobileDataStore): BackupApi {
+  return {
+    async exportDatabase(): Promise<BackupResult> {
+      try {
+        const data = await store.exportToJson();
+        const json = JSON.stringify(data);
+        const fileName = `life-manager-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const written = await Filesystem.writeFile({
+          path: fileName,
+          data: json,
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+        await Share.share({ title: 'PakCyberbot Life Manager backup', url: written.uri });
+        return { ok: true, path: fileName };
+      } catch (err) {
+        return { ok: false, error: String(err) };
+      }
+    },
+
+    importDatabase(): Promise<BackupResult> {
+      return new Promise<BackupResult>((resolve) => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json,.json';
+        input.style.display = 'none';
+        const cleanup = () => input.remove();
+
+        input.addEventListener('cancel', () => {
+          cleanup();
+          resolve({ ok: false, cancelled: true });
+        });
+
+        input.addEventListener('change', () => {
+          const file = input.files?.[0];
+          cleanup();
+          if (!file) {
+            resolve({ ok: false, cancelled: true });
+            return;
+          }
+          file
+            .text()
+            .then(async (text) => {
+              const parsed = JSON.parse(text);
+              // Same "verify before trusting" discipline as desktop's SQLite-header check before
+              // overwriting anything — reject a wrong-shaped file up front rather than handing it
+              // to importFromJson and failing confusingly deep inside the native plugin.
+              if (!parsed || !Array.isArray(parsed.tables)) {
+                resolve({ ok: false, error: "That file doesn't look like a Life Manager backup." });
+                return;
+              }
+              await store.importFromJson(parsed);
+              resolve({ ok: true, path: file.name });
+              // Mirrors desktop's app.relaunch() after an import — the simplest way to guarantee
+              // every store reflects the freshly-imported data rather than hand-refetching each
+              // one. Delayed slightly so the caller's own success message has a moment to show.
+              setTimeout(() => window.location.reload(), 400);
+            })
+            .catch((err) => resolve({ ok: false, error: String(err) }));
+        });
+
+        document.body.appendChild(input);
+        input.click();
+      });
+    },
+  };
+}
 
 // News/Jobs/Entertainment/EarningWays/Food all involve either an AI provider
 // call or a live-fetch pipeline (RSS, job APIs) — mobile is read-mostly and
@@ -273,7 +350,7 @@ export function buildMobileApi(store: MobileDataStore): LifeManagerApi {
     dialog,
     media,
     drive,
-    backup,
+    backup: buildBackup(store),
     news,
     entertainment,
     earningWays,

@@ -220,6 +220,8 @@ Built per an explicit ask: not a replica of desktop, but a **quick-glance compan
 
 Full technical detail — the CORS/CapacitorHttp mechanism, the Web-Crypto secret-encryption interop with desktop's Node-crypto version, and the local dev-environment gotchas hit getting a real build running in an emulator (Gradle/JDK and Android-emulator TLS trust-store issues, both environment quirks rather than code bugs) — lives in CLAUDE.md's "Mobile app" section rather than duplicated here.
 
+**Two follow-ups since Phase 1 first shipped**, both also detailed in CLAUDE.md: a **status bar overlap fix** (content was drawing under the system status bar — fixed with CSS `env(safe-area-inset-top)`, since the native `@capacitor/status-bar` JS call alone wasn't enough on this Android version's enforced edge-to-edge), and two new capabilities that round out what a "quick-glance companion" needs even before Drive sync exists: **Time Table local notifications** (a weekly recurring reminder per slot, toggle in Settings, using `@capacitor/local-notifications`) and **local backup** (export/import the whole database as a JSON file via `@capacitor-community/sqlite`'s own JSON dump/restore + the native Share sheet — a different format from desktop's binary `.sqlite` file, since mobile has no reliable way to read the plugin's internal database file path).
+
 ## 11. V1 desktop — build status & how to run
 
 The desktop app is scaffolded and running, branded as **PakCyberbot Life Manager** (window icon + sidebar mark from `logo.ico`/`logo.png` at the repo root). What exists right now:

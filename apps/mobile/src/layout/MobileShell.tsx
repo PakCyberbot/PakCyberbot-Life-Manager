@@ -29,7 +29,15 @@ export function MobileShell({
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-lg px-4 pb-6 pt-6">{children}</div>
+        {/* max(1.5rem, safe-area-inset-top): the status bar's own height on a
+            real device (confirmed live: the JS-side StatusBar.setOverlaysWebView
+            call alone wasn't enough — Android's enforced edge-to-edge on newer
+            API levels ignores it, so the WebView still draws under the status
+            bar; CSS env() is what actually reflects the real inset), falling
+            back to the plain 1.5rem spacing everywhere env() reports 0 (a
+            plain browser during `npm run mobile:dev`, or an older Android
+            version that isn't edge-to-edge in the first place). */}
+        <div className="mx-auto max-w-lg px-4 pb-6 pt-[max(1.5rem,env(safe-area-inset-top))]">{children}</div>
       </main>
       <nav className="flex shrink-0 items-center justify-around border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
         {TABS.map((tab) => {
