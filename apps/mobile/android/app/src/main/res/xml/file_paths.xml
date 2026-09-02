@@ -2,4 +2,9 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <external-path name="my_images" path="." />
     <cache-path name="my_cache_images" path="." />
+    <!-- files-path = Context.getFilesDir(), which is where Capacitor's Filesystem
+         plugin writes for Directory.DATA — needed so LocalFileOpenerPlugin can
+         grant a content:// URI (via FileProvider) for a PDF added through
+         Library's "Add book" flow (see MobileLibraryScreen.tsx's NewBookDialog). -->
+    <files-path name="files" path="." />
 </paths>

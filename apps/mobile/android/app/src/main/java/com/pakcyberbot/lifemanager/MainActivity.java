@@ -10,6 +10,7 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
     registerPlugin(LoopbackAuthPlugin.class);
+    registerPlugin(LocalFileOpenerPlugin.class);
     super.onCreate(savedInstanceState);
   }
 }

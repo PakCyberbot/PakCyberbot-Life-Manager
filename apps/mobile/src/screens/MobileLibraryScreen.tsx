@@ -1,27 +1,29 @@
-import { useEffect, useState } from 'react';
-import { BookOpen, Globe, Play, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BookOpen, FileWarning, Globe, Play, Plus, Trash2, Upload } from 'lucide-react';
 import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
 import type { Book, VideoKind, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
-import { Card, Badge, Button, Dialog, Field, Input, Textarea, EmptyState } from '@life-manager/ui';
+import { Card, Badge, Button, Dialog, Field, Input, Switch, Textarea, EmptyState } from '@life-manager/ui';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import clsx from 'clsx';
+import { readFileAsBase64 } from '../api/mobileApi';
 
 type Tab = 'books' | 'videos' | 'webLinks';
 const TAB_LABEL: Record<Tab, string> = { books: 'Books', videos: 'Videos', webLinks: 'Web links' };
+const ONLY_THIS_HOST_SETTING_KEY = 'libraryOnlyThisHostBooks';
 
 // The one editable section on mobile — same three Library tabs as desktop,
 // rebuilt single-column for a phone (not a port of desktop's LibraryScreen,
 // which assumes a wide multi-column grid and native file-picker dialogs).
-// Books show whatever's synced/share-intent-added (Phase 2) — no manual add
-// here, mirroring desktop's own host-gating: a book only opens on the device
-// it belongs to.
 export function MobileLibraryScreen() {
   const [tab, setTab] = useState<Tab>('books');
-  const { books, fetchBooks, loaded: booksLoaded } = useBooksStore();
+  const { books, fetchBooks, loaded: booksLoaded, openBook, removeBook } = useBooksStore();
   const { videos, fetchVideos, loaded: videosLoaded } = useVideosStore();
   const { webLinks, fetchWebLinks, loaded: webLinksLoaded } = useWebLinksStore();
   const [hostname, setHostname] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [onlyThisHost, setOnlyThisHost] = useState(false);
   const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
   useEffect(() => {
@@ -29,8 +31,25 @@ export function MobileLibraryScreen() {
     if (!videosLoaded) fetchVideos();
     if (!webLinksLoaded) fetchWebLinks();
     getApi().system.hostname().then(setHostname);
+    getApi().settings.get(ONLY_THIS_HOST_SETTING_KEY).then((v) => setOnlyThisHost(v === 'on'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const toggleOnlyThisHost = (next: boolean) => {
+    setOnlyThisHost(next);
+    getApi().settings.set(ONLY_THIS_HOST_SETTING_KEY, next ? 'on' : 'off');
+  };
+
+  const visibleBooks = useMemo(
+    () => (onlyThisHost ? books.filter((b) => !b.hostname || b.hostname === hostname) : books),
+    [books, onlyThisHost, hostname]
+  );
+
+  const openBookTapped = async (book: Book) => {
+    setOpenError(null);
+    const result = await openBook(book);
+    if (!result.ok) setOpenError(result.error ?? 'Could not open this file.');
+  };
 
   // A Task's linked book/video (see GoalsView/TaskRow) sets this to jump straight to that item —
   // switch to its tab, remember its id to scroll+highlight it, then clear the signal so it only
@@ -57,11 +76,9 @@ export function MobileLibraryScreen() {
           <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
           <p className="mt-1 text-sm text-muted">Quick-save anything to explore later.</p>
         </div>
-        {tab !== 'books' && (
-          <Button size="sm" onClick={() => setAddOpen(true)}>
-            <Plus size={15} />
-          </Button>
-        )}
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus size={15} />
+        </Button>
       </div>
 
       <div className="inline-flex w-full items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
@@ -79,23 +96,47 @@ export function MobileLibraryScreen() {
         ))}
       </div>
 
-      {tab === 'books' && <BooksList books={books} hostname={hostname} highlightId={highlightId} />}
+      {tab === 'books' && (
+        <>
+          {books.some((b) => b.hostname) && (
+            <label className="flex items-center justify-between gap-2 rounded-lg bg-background px-3 py-2 text-xs">
+              <span className="text-muted">Only show PDFs added on this device</span>
+              <Switch checked={onlyThisHost} onChange={toggleOnlyThisHost} label="Only this device's PDFs" />
+            </label>
+          )}
+          {openError && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-500">{openError}</p>}
+          <BooksList books={visibleBooks} hostname={hostname} highlightId={highlightId} onOpen={openBookTapped} onRemove={removeBook} />
+        </>
+      )}
       {tab === 'videos' && <VideosList videos={videos} onEmptyAdd={() => setAddOpen(true)} highlightId={highlightId} />}
       {tab === 'webLinks' && <WebLinksList webLinks={webLinks} onEmptyAdd={() => setAddOpen(true)} />}
 
+      {tab === 'books' && <NewBookDialog open={addOpen} onClose={() => setAddOpen(false)} />}
       {tab === 'videos' && <NewVideoDialog open={addOpen} onClose={() => setAddOpen(false)} />}
       {tab === 'webLinks' && <NewWebLinkDialog open={addOpen} onClose={() => setAddOpen(false)} />}
     </div>
   );
 }
 
-function BooksList({ books, hostname, highlightId }: { books: Book[]; hostname: string | null; highlightId: string | null }) {
+function BooksList({
+  books,
+  hostname,
+  highlightId,
+  onOpen,
+  onRemove,
+}: {
+  books: Book[];
+  hostname: string | null;
+  highlightId: string | null;
+  onOpen: (book: Book) => void;
+  onRemove: (id: string) => void;
+}) {
   if (books.length === 0) {
     return (
       <EmptyState
         icon={<BookOpen size={24} />}
         title="No books yet"
-        description="Share a PDF into this app (coming soon), or sync from desktop."
+        description="Add a PDF from this device, share one in, or sync from desktop."
       />
     );
   }
@@ -103,25 +144,38 @@ function BooksList({ books, hostname, highlightId }: { books: Book[]; hostname: 
     <div className="grid grid-cols-2 gap-3">
       {books.map((b) => {
         const onOtherHost = b.hostname && hostname && b.hostname !== hostname;
+        const openable = !!b.filePath && !onOtherHost;
         return (
           <Card
             key={b.id}
             id={`library-${b.id}`}
             className={clsx('overflow-hidden transition-shadow', highlightId === b.id && 'ring-2 ring-accentLibrary')}
           >
-            <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-accentLibrary/25 via-accentLibrary/10 to-transparent p-3 text-center">
+            <button
+              onClick={openable ? () => onOpen(b) : undefined}
+              disabled={!openable}
+              className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-accentLibrary/25 via-accentLibrary/10 to-transparent p-3 text-center active:opacity-70"
+            >
               {b.coverImage ? (
                 <img src={b.coverImage} alt="" className="h-full w-full object-cover" />
+              ) : onOtherHost ? (
+                <FileWarning size={18} className="text-muted" />
               ) : (
                 <>
                   <BookOpen size={18} className="text-accentLibrary" />
                   <span className="line-clamp-3 text-xs font-medium">{b.title}</span>
                 </>
               )}
-            </div>
-            <div className="p-2.5">
-              <p className="line-clamp-2 text-xs font-medium leading-snug">{b.title}</p>
-              {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
+            </button>
+            <div className="flex items-start justify-between gap-1 p-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-2 text-xs font-medium leading-snug">{b.title}</p>
+                {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
+                {!b.filePath && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
+              </div>
+              <button onClick={() => onRemove(b.id)} className="shrink-0 text-muted active:text-red-500">
+                <Trash2 size={13} />
+              </button>
             </div>
           </Card>
         );
@@ -230,6 +284,84 @@ function WebLinksList({ webLinks, onEmptyAdd }: { webLinks: WebLink[]; onEmptyAd
         </Card>
       ))}
     </div>
+  );
+}
+
+function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { addBook } = useBooksStore();
+  const [title, setTitle] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reset = () => {
+    setTitle('');
+    setFile(null);
+    setError(null);
+  };
+
+  const pickFile = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf';
+    input.onchange = () => {
+      const picked = input.files?.[0];
+      if (picked) {
+        setFile(picked);
+        if (!title.trim()) setTitle(picked.name.replace(/\.pdf$/i, ''));
+      }
+    };
+    input.click();
+  };
+
+  const submit = async () => {
+    if (!title.trim() || !file) return;
+    setSaving(true);
+    setError(null);
+    try {
+      // Copied into app-private storage (Directory.Data) rather than trusting the picker's
+      // content:// URI to stay valid long-term — Android scoped-storage permissions on a
+      // one-off pick aren't guaranteed reusable across app restarts.
+      const base64 = await readFileAsBase64(file);
+      const fileName = `book-${Date.now()}.pdf`;
+      await Filesystem.writeFile({ path: fileName, directory: Directory.Data, data: base64 });
+      const { uri } = await Filesystem.getUri({ path: fileName, directory: Directory.Data });
+      const filePath = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
+      await addBook({ title: title.trim(), filePath });
+      reset();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Add a PDF">
+      <div className="space-y-3">
+        <Field label="PDF file">
+          <Button variant="outline" size="sm" onClick={pickFile} type="button">
+            <Upload size={14} /> {file ? file.name : 'Choose PDF'}
+          </Button>
+        </Field>
+        <Field label="Title">
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Deep Work" />
+        </Field>
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        <p className="text-[11px] text-muted">
+          Saved to this device only — the "on {'{device}'}" caption on other devices reflects where it opens from.
+        </p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={submit} disabled={!title.trim() || !file || saving}>
+            {saving ? 'Saving…' : 'Add book'}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 

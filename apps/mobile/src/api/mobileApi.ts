@@ -38,6 +38,7 @@ import type {
 } from '@life-manager/core';
 import type { MobileDataStore } from '@life-manager/db/src/capacitorDriver';
 import { createMobileDriveSync } from '../drive/mobileDriveSync';
+import { LocalFileOpener } from '../native/localFileOpener';
 
 const NOT_AVAILABLE = 'Not available on mobile in this version.';
 
@@ -208,16 +209,31 @@ const media: MediaApi = {
   fetchWebPreview,
 };
 
+// A book added on mobile (MobileLibraryScreen.tsx's NewBookDialog) or via
+// share-intent always has no in-app reader to speak of — both openBookInApp
+// and openBookExternally just hand the file to whatever app the user picks,
+// via the native LocalFileOpenerPlugin (FileProvider + ACTION_VIEW, the
+// mobile equivalent of desktop's shell.openPath "let the OS decide").
+async function openBookWithSystemViewer(filePath: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await LocalFileOpener.openFile({ path: filePath, mimeType: 'application/pdf' });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 function buildSystem(): SystemApi {
   return {
     hostname: getHostname,
-    // Books are added on mobile via share-intent (Phase 2), which copies bytes
-    // into app-private storage directly — this manual "read an arbitrary path"
-    // capability is a desktop-only need (native file dialogs).
+    // Reading an arbitrary already-on-disk path by string (as opposed to a
+    // freshly user-picked File object, which NewBookDialog's own
+    // readFileAsBase64(file: File) helper below already handles) is a
+    // desktop-only need (native file dialogs hand back a path first).
     readFileAsBase64: async () => null,
     detectPdfReader: async () => null,
-    openBookInApp: async () => ({ ok: false, error: NOT_AVAILABLE }),
-    openBookExternally: async () => ({ ok: false, error: NOT_AVAILABLE }),
+    openBookInApp: async (input) => openBookWithSystemViewer(input.filePath),
+    openBookExternally: async (input) => openBookWithSystemViewer(input.filePath),
     openExternal: async (url) => {
       await Browser.open({ url });
     },
@@ -252,7 +268,9 @@ async function looksLikeSqlite(file: File): Promise<boolean> {
   return header === SQLITE_MAGIC;
 }
 
-function readFileAsBase64(file: File): Promise<string> {
+// Exported so MobileLibraryScreen's NewBookDialog can reuse it for the same
+// picked-File-to-base64 step, rather than duplicating this FileReader wrapper.
+export function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
