@@ -9,7 +9,11 @@
   "scripts": {
     "dev": "npm run dev --workspace=@life-manager/desktop",
     "build": "npm run build --workspace=@life-manager/desktop",
-    "typecheck": "npm run typecheck --workspace=@life-manager/desktop",
-    "dist": "npm run dist --workspace=@life-manager/desktop"
+    "typecheck": "npm run typecheck --workspace=@life-manager/desktop && npm run typecheck --workspace=@life-manager/mobile",
+    "dist": "npm run dist --workspace=@life-manager/desktop",
+    "mobile:dev": "npm run dev --workspace=@life-manager/mobile",
+    "mobile:build": "npm run build --workspace=@life-manager/mobile",
+    "mobile:sync": "npm run build --workspace=@life-manager/mobile && npm run cap:sync --workspace=@life-manager/mobile",
+    "mobile:run": "npm run mobile:sync && npm run cap:run --workspace=@life-manager/mobile"
   }
 }

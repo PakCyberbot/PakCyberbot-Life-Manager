@@ -207,8 +207,18 @@ This section was written before the build; §11's "Google Drive sync" subsection
 3. ~~Stand up `packages/db` with the SQLite schema for the 4 v1 modules + the `links` table~~ — done
 4. ~~Build `packages/core` models/stores for Goals → Tasks → Calendar → Money~~ — done
 5. ~~Build `apps/desktop` shell, wire it to `packages/ui` + `packages/core` + `packages/db`~~ — done, running (§11)
-6. Use the app for real for a bit, note friction points, then decide what v1.1 fixes vs what's a v2 module (Entertainment, Earning Ways, Habits, ...)
-7. Once desktop v1 is usable daily, add `apps/mobile` via Capacitor reusing the same UI/core
+6. Use the app for real for a bit, note friction points, then decide what v1.1 fixes vs what's a v2 module (Entertainment, Earning Ways, Habits, ...) — done, most of v2's list shipped (Entertainment, Earning Ways, Jobs, Health, File Manager, News & Updates, Library Web Links)
+7. ~~Once desktop v1 is usable daily, add `apps/mobile` via Capacitor~~ — Phase 1 done (see §12): scaffold, its own `capacitorDriver.ts`, and a full mobile-specific UI reusing `packages/core`'s stores as-is (not `packages/ui`'s screens — mobile isn't a port of desktop's UI, see §12 for why). Phase 2 (share-intent capture, mobile Drive sync) not started.
+
+## 12. Mobile app — a read-mostly companion, not a port of desktop
+
+Built per an explicit ask: not a replica of desktop, but a **quick-glance companion** sharing the same data (once Drive sync lands on mobile too) with its own, deliberately smaller UI.
+
+**Product shape**: Dashboard shows the same goals/events/savings/quotes desktop's Dashboard does, plus today's Time Table rendered as the Clock view (`TimeTableClock`, reused byte-for-byte from `packages/ui` — it turned out to have zero Electron/platform coupling, pure props-in-SVG-out). Every other module (Goals, Calendar, Savings, Entertainment, Earning Ways, Jobs, Health, News) is **view-only** on mobile — no add/edit/refresh actions, since the phone is for checking things, not managing them, and never runs its own AI/RSS/job-fetch calls itself. File Manager doesn't exist on mobile (desktop-local-filesystem concept, no mobile equivalent). **Library is the one editable section** — add a video/web-link by pasting a URL (Phase 1) or, eventually, by sharing one in from another app (Phase 2) — because quickly saving something to look at later is exactly the kind of thing worth doing from a phone.
+
+**Architecture**: `apps/mobile` is its own Vite + React + Tailwind app wrapped by Capacitor, with its own bottom-tab-navigation UI (not `packages/ui`'s sidebar-based `App.tsx`) — but it reuses `packages/core`'s Zustand stores completely unmodified, because those stores only ever call `getApi()`, never Electron/IPC directly, exactly the seam §2/§7 originally described. What's genuinely new: `packages/db/src/capacitorDriver.ts` (a `DataStore` implementation on `@capacitor-community/sqlite`, running the identical `schema.ts` so the two apps' database files stay interchangeable) and `apps/mobile/src/api/mobileApi.ts` (mobile's `window.api`, implemented directly in the same JS context rather than over IPC to a separate main process — `CapacitorHttp` being enabled in `capacitor.config.ts` is what makes this possible without hitting WebView CORS on third-party fetches).
+
+Full technical detail — the CORS/CapacitorHttp mechanism, the Web-Crypto secret-encryption interop with desktop's Node-crypto version, and the local dev-environment gotchas hit getting a real build running in an emulator (Gradle/JDK and Android-emulator TLS trust-store issues, both environment quirks rather than code bugs) — lives in CLAUDE.md's "Mobile app" section rather than duplicated here.
 
 ## 11. V1 desktop — build status & how to run
 

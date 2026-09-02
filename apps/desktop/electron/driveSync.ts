@@ -13,7 +13,7 @@
 import { shell } from 'electron';
 import fs from 'node:fs';
 import http from 'node:http';
-import type { ElectronDataStore } from '@life-manager/db';
+import type { ElectronDataStore } from '@life-manager/db/src/electronDriver';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email';
 const DRIVE_FOLDER_NAME = 'PakCyberbot Life Manager';

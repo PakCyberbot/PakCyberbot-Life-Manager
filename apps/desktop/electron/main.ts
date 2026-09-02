@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createElectronDataStore, type ElectronDataStore } from '@life-manager/db';
+import { createElectronDataStore, type ElectronDataStore } from '@life-manager/db/src/electronDriver';
 import { createDriveSync } from './driveSync';
 import { fetchNewsForCategory } from './ai/news';
 import { generateEntertainmentVerdict } from './ai/entertainment';

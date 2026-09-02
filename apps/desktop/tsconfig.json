@@ -14,5 +14,19 @@
     "baseUrl": ".",
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "electron", "../../packages/shared/src", "../../packages/db/src", "../../packages/core/src", "../../packages/ui/src"]
+  "include": [
+    "src",
+    "electron",
+    "../../packages/shared/src",
+    "../../packages/core/src",
+    "../../packages/ui/src",
+    // Only the platform-neutral + Electron-specific files from packages/db —
+    // NOT capacitorDriver.ts/secretCryptoWeb.ts, which are mobile-only (see
+    // apps/mobile/tsconfig.json's matching comment for the same reasoning).
+    "../../packages/db/src/DataStore.ts",
+    "../../packages/db/src/schema.ts",
+    "../../packages/db/src/electronDriver.ts",
+    "../../packages/db/src/secretCrypto.ts",
+    "../../packages/db/src/index.ts"
+  ]
 }

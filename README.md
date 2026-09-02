@@ -1,8 +1,8 @@
 # PakCyberbot Life Manager
 
-A local-first, cross-platform personal life management app — goals (with tasks built in), calendar, personal savings, a book/video library, and life quotes, all in one place. Desktop-first (Electron), with mobile/web planned via the same shared codebase.
+A local-first, cross-platform personal life management app — goals (with tasks built in), calendar, personal savings, a book/video/web-link library, and life quotes, all in one place. Desktop-first (Electron), with an Android companion app in progress via the same shared codebase.
 
-**Status**: v0.2.0 — every module below is built, a Windows installer is available (see Releases), and Google Drive sync has been verified end-to-end.
+**Status**: v0.2.0 — every module below is built for desktop, a Windows installer is available (see Releases), and Google Drive sync has been verified end-to-end. A read-mostly Android companion app (`apps/mobile`) is under active development — see [Mobile companion](#mobile-companion-android-in-progress) below.
 
 ## Features
 
@@ -60,16 +60,32 @@ Sync is built in but needs your own free Google OAuth credential — there's no 
 6. Paste the resulting Client ID + Secret into the app's Settings → Google Drive sync → Connect. Expect an "unverified app" browser warning — click **Advanced → Go to [app name] (unsafe)**, which is normal for a personal, unpublished app
 7. If you add the `drive.file` scope *after* already connecting once, click **Disconnect** then **Connect** again — an existing token can't gain a new scope just by refreshing it
 
+## Mobile companion (Android, in progress)
+
+A read-mostly companion for quick glances on the go — not a port of the desktop UI. Dashboard shows the same goals/events/savings/quotes as desktop plus today's Time Table as a Clock view; every other module is view-only; **Library** (books/videos/web links) is the one editable section, for quickly saving something to look at later.
+
+**Phase 1 (done)**: its own local data (a real on-device SQLite database, same schema as desktop), a full read-only UI for every module, and an editable Library with manual add. **Phase 2 (not started)**: Android share-intent capture (share a link straight into Library from any app) and Drive sync from the phone.
+
+```sh
+npm install                 # covers apps/mobile too (same npm workspaces)
+npm run mobile:dev          # fast UI iteration in a browser (window.api isn't wired — for layout/styling only)
+cd apps/mobile && npx cap add android   # one-time: generates the native Android project
+npm run mobile:run          # builds, syncs into the native project, and launches on a connected device/emulator
+```
+
+Needs Android Studio + SDK + a JDK installed and an emulator (or device) running. See CLAUDE.md's "Mobile app" section for the full architecture writeup and known local-environment Gradle/JDK gotchas.
+
 ## Project structure
 
 An npm-workspaces monorepo — see [structure.md](structure.md) for the full architecture writeup.
 
 ```
 apps/desktop/     Electron shell (main, preload, Drive sync, Vite renderer entry)
+apps/mobile/      Capacitor/Android companion — its own UI + mobile api layer (see above)
 packages/shared/  Types + utils, no dependencies
-packages/db/      SQLite schema + the DataStore abstraction (sql.js-backed on desktop)
-packages/core/    Zustand stores, one per module
-packages/ui/      All React screens/components — platform-agnostic
+packages/db/      SQLite schema + the DataStore abstraction (sql.js on desktop, @capacitor-community/sqlite on mobile)
+packages/core/    Zustand stores, one per module — shared unmodified by both apps
+packages/ui/      Desktop's React screens/components, plus a few platform-neutral pieces mobile reuses
 ```
 
 ## Documentation
