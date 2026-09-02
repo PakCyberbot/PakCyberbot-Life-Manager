@@ -85,47 +85,73 @@ function openTaskLink(task: Task, onNavigate: (s: ScreenId) => void) {
   }
 }
 
-/** The small icon button that opens a task's link (if it has one) — grayed out and disabled when
- * it's a file/folder link added on a different machine than the one currently viewing it. */
-function TaskLinkButton({
+/** A task's title, doubling as its "open link" affordance when it has one — clicking the title opens
+ * it directly, rather than a separate button crammed in next to Edit/Delete where a misclick is easy.
+ * Plain, non-interactive text when there's no link. */
+function TaskTitle({
   task,
   hostname,
   onNavigate,
+  className,
+  as = 'span',
 }: {
   task: Task;
   hostname: string | null;
   onNavigate: (s: ScreenId) => void;
+  className?: string;
+  as?: 'span' | 'p';
 }) {
+  const linkedOnOtherMachine =
+    !!task.linkType && (task.linkType === 'file' || task.linkType === 'folder') && !!task.linkHostname && task.linkHostname !== hostname;
+  const openable = !!task.linkType && !linkedOnOtherMachine;
+  const Tag = as;
+  return (
+    <Tag
+      onClick={openable ? () => openTaskLink(task, onNavigate) : undefined}
+      title={
+        linkedOnOtherMachine
+          ? `Linked, but only available on ${task.linkHostname}`
+          : openable
+            ? task.linkType === 'book' || task.linkType === 'video'
+              ? 'Click to open in Library'
+              : task.linkType === 'url'
+                ? 'Click to open link'
+                : 'Click to open'
+            : undefined
+      }
+      className={clsx(
+        className,
+        task.status === 'done' && 'text-muted line-through',
+        openable && 'cursor-pointer hover:text-accentGoals hover:underline'
+      )}
+    >
+      {task.title}
+    </Tag>
+  );
+}
+
+/** A small passive icon beside Edit/Delete indicating a task carries a link and what kind — not
+ * itself clickable (the title is, via TaskTitle above), so it can't be misclicked for edit/delete. */
+function TaskLinkIcon({ task, hostname }: { task: Task; hostname: string | null }) {
   if (!task.linkType) return null;
   const linkedOnOtherMachine =
     (task.linkType === 'file' || task.linkType === 'folder') && task.linkHostname && task.linkHostname !== hostname;
+  const Icon = linkedOnOtherMachine
+    ? FileWarning
+    : task.linkType === 'book'
+      ? BookOpen
+      : task.linkType === 'video'
+        ? Play
+        : task.linkType === 'url'
+          ? Link2
+          : ExternalLink;
   return (
-    <button
-      onClick={() => openTaskLink(task, onNavigate)}
-      disabled={!!linkedOnOtherMachine}
-      title={
-        linkedOnOtherMachine
-          ? `Only available on ${task.linkHostname}`
-          : task.linkType === 'book' || task.linkType === 'video'
-            ? 'Open in Library'
-            : task.linkType === 'url'
-              ? 'Open link'
-              : 'Open'
-      }
-      className={clsx('shrink-0', linkedOnOtherMachine ? 'text-muted' : 'text-accentGoals hover:text-accentGoals/80')}
+    <span
+      title={linkedOnOtherMachine ? `Only available on ${task.linkHostname}` : 'Linked — click the title to open'}
+      className={clsx('shrink-0', linkedOnOtherMachine ? 'text-muted' : 'text-accentGoals')}
     >
-      {linkedOnOtherMachine ? (
-        <FileWarning size={14} />
-      ) : task.linkType === 'book' ? (
-        <BookOpen size={14} />
-      ) : task.linkType === 'video' ? (
-        <Play size={14} />
-      ) : task.linkType === 'url' ? (
-        <Link2 size={14} />
-      ) : (
-        <ExternalLink size={14} />
-      )}
-    </button>
+      <Icon size={14} />
+    </span>
   );
 }
 
@@ -234,14 +260,14 @@ export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void 
                   </Select>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className={clsx('truncate font-medium', t.status === 'done' && 'text-muted line-through')}>{t.title}</p>
+                  <TaskTitle as="p" task={t} hostname={hostname} onNavigate={onNavigate} className="truncate font-medium" />
                   <p className="truncate text-xs text-muted">
                     {t.dueDate ? formatDate(t.dueDate) : 'No due date'}
                     {t.notes ? ` · ${t.notes}` : ''}
                   </p>
                 </div>
                 <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
-                <TaskLinkButton task={t} hostname={hostname} onNavigate={onNavigate} />
+                <TaskLinkIcon task={t} hostname={hostname} />
                 <button onClick={() => setEditingQuickTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
                   <Pencil size={13} />
                 </button>
@@ -580,18 +606,25 @@ function GoalDetailDialog({
                   {expanded && (
                     <div className="space-y-1.5 border-t border-border px-3 py-2">
                       {subtasks.map((t) => (
-                        <label key={t.id} className="flex items-center gap-2.5 text-sm">
+                        // A plain div, not <label> — a <label> would toggle the checkbox on any
+                        // click inside it, including on the title, which needs its own click-to-open
+                        // behavior (TaskTitle) instead.
+                        <div key={t.id} className="flex items-center gap-2.5 text-sm">
                           <input
                             type="checkbox"
                             checked={t.status === 'done'}
                             onChange={() => setStatus(t.id, t.status === 'done' ? 'todo' : 'done')}
                             className="h-4 w-4 shrink-0 rounded border-border accent-current text-accentGoals"
                           />
-                          <span className={clsx('flex-1', t.status === 'done' && 'text-muted line-through')}>{t.title}</span>
-                          <button onClick={() => removeTask(t.id)} className="shrink-0 text-muted hover:text-red-500">
+                          <TaskTitle task={t} hostname={hostname} onNavigate={onNavigate} className="flex-1" />
+                          <TaskLinkIcon task={t} hostname={hostname} />
+                          <button onClick={() => setEditingTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
+                            <Pencil size={12} />
+                          </button>
+                          <button onClick={() => removeTask(t.id)} title="Delete" className="shrink-0 text-muted hover:text-red-500">
                             <Trash2 size={12} />
                           </button>
-                        </label>
+                        </div>
                       ))}
                       <div className="flex gap-2 pt-1">
                         <Input
@@ -663,14 +696,14 @@ function GoalDetailDialog({
                       </Select>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className={clsx('truncate font-medium', t.status === 'done' && 'text-muted line-through')}>{t.title}</p>
+                      <TaskTitle as="p" task={t} hostname={hostname} onNavigate={onNavigate} className="truncate font-medium" />
                       <p className="truncate text-xs text-muted">
                         {t.dueDate ? formatDate(t.dueDate) : 'No due date'}
                         {t.notes ? ` · ${t.notes}` : ''}
                       </p>
                     </div>
                     <Badge tone={PRIORITY_TONE[t.priority]}>{t.priority}</Badge>
-                    <TaskLinkButton task={t} hostname={hostname} onNavigate={onNavigate} />
+                    <TaskLinkIcon task={t} hostname={hostname} />
                     <button onClick={() => setEditingTask(t)} title="Edit" className="shrink-0 text-muted hover:text-foreground">
                       <Pencil size={13} />
                     </button>
