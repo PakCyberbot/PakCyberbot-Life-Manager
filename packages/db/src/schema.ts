@@ -6,6 +6,9 @@
 // even where v1 doesn't use all of them yet — cheap now, avoids a migration later.
 
 export const SCHEMA_STATEMENTS: string[] = [
+  // imageUrl: a data: URI, either auto-fetched from Wikipedia by title at creation time (same
+  // real-search-never-AI-guessed discipline as Entertainment's posters) or manually uploaded —
+  // see structure.md's Goals section.
   `CREATE TABLE IF NOT EXISTS goals (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -15,6 +18,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     targetDate TEXT,
     status TEXT NOT NULL DEFAULT 'active',
     progressPct INTEGER NOT NULL DEFAULT 0,
+    imageUrl TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

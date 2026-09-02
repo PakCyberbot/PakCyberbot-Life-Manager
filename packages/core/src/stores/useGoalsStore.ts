@@ -41,12 +41,25 @@ export const useGoalsStore = create<GoalsState>((set, get) => ({
       targetDate: input.targetDate ?? null,
       status: 'active',
       progressPct: 0,
+      imageUrl: null,
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,
     };
     await getApi().db.create('goals', goal);
     set({ goals: [goal, ...get().goals] });
+
+    // Non-blocking enrichment, same pattern as Entertainment's poster lookup — the goal shows up
+    // immediately, an image patches in a moment later if Wikipedia has a real match for the title.
+    // Personal/abstract goal titles often won't match anything; that's fine, not an error, and the
+    // user can remove/replace it manually either way.
+    getApi()
+      .media.fetchWikipediaThumbnail(goal.title, '')
+      .then((imageUrl) => {
+        if (imageUrl) void get().updateGoal(goal.id, { imageUrl });
+      })
+      .catch(() => {});
+
     return goal;
   },
 

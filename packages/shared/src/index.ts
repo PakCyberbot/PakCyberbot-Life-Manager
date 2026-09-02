@@ -27,6 +27,9 @@ export interface Goal extends BaseRow {
   targetDate?: string | null;
   status: GoalStatus;
   progressPct: number;
+  /** data: URI — auto-fetched from Wikipedia by title on creation, or manually uploaded; null if
+   * removed/unavailable. See structure.md's Goals section. */
+  imageUrl?: string | null;
 }
 
 export interface Milestone extends BaseRow {

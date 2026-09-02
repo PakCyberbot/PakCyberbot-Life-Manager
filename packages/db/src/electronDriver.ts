@@ -157,6 +157,7 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
   ensureColumn('newsCategories', 'previewImage', 'TEXT');
   ensureColumn('newsCategories', 'previewFavicon', 'TEXT');
   ensureColumn('wishlistItems', 'purchaseEntryId', 'TEXT');
+  ensureColumn('goals', 'imageUrl', 'TEXT');
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 

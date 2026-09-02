@@ -5,12 +5,14 @@ import {
   ExternalLink,
   FileWarning,
   FolderOpen,
+  ImageOff,
   Link2,
   Pencil,
   Play,
   Plus,
   Target,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import {
   getApi,
@@ -43,6 +45,15 @@ const PRIORITY_TONE: Record<TaskPriority, 'default' | 'warning' | 'danger'> = {
   low: 'default',
   medium: 'warning',
   high: 'danger',
+};
+
+const IMAGE_MIME_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
 };
 
 export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }) {
@@ -86,19 +97,22 @@ export function GoalsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void 
             <Card
               key={g.id}
               onClick={() => setDetailGoal(g)}
-              className="cursor-pointer p-5 transition-transform hover:-translate-y-0.5 hover:shadow-md"
+              className="cursor-pointer overflow-hidden p-0 transition-transform hover:-translate-y-0.5 hover:shadow-md"
             >
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <h3 className="font-semibold leading-snug">{g.title}</h3>
-                <Badge tone={STATUS_TONE[g.status]}>{g.status}</Badge>
+              {g.imageUrl && <img src={g.imageUrl} alt="" className="h-28 w-full object-cover" />}
+              <div className="p-5">
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <h3 className="font-semibold leading-snug">{g.title}</h3>
+                  <Badge tone={STATUS_TONE[g.status]}>{g.status}</Badge>
+                </div>
+                {g.description && <p className="mb-3 line-clamp-2 text-sm text-muted">{g.description}</p>}
+                <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+                  <span>{g.category || g.type}</span>
+                  <span>{g.progressPct}%</span>
+                </div>
+                <ProgressBar value={g.progressPct} toneClassName="bg-accentGoals" />
+                {g.targetDate && <p className="mt-2 text-xs text-muted">Target: {formatDate(g.targetDate)}</p>}
               </div>
-              {g.description && <p className="mb-3 line-clamp-2 text-sm text-muted">{g.description}</p>}
-              <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
-                <span>{g.category || g.type}</span>
-                <span>{g.progressPct}%</span>
-              </div>
-              <ProgressBar value={g.progressPct} toneClassName="bg-accentGoals" />
-              {g.targetDate && <p className="mt-2 text-xs text-muted">Target: {formatDate(g.targetDate)}</p>}
             </Card>
           ))}
         </div>
@@ -241,6 +255,17 @@ function GoalDetailDialog({
     setNewMilestone('');
   };
 
+  const uploadImage = async () => {
+    const picked = await getApi().dialog.pickFileOrFolder('file');
+    if (!picked || picked.isFolder) return;
+    const base64 = await getApi().system.readFileAsBase64(picked.path);
+    if (!base64) return;
+    const ext = picked.path.split('.').pop()?.toLowerCase() ?? '';
+    const mime = IMAGE_MIME_BY_EXT[ext];
+    if (!mime) return; // not a recognized image file — silently ignore rather than store garbage
+    await onUpdate(goal.id, { imageUrl: `data:${mime};base64,${base64}` });
+  };
+
   const openTaskLink = (task: Task) => {
     if (task.linkType === 'book' && task.linkTargetId) {
       useUiFocusStore.getState().setLibraryFocus({ type: 'book', id: task.linkTargetId });
@@ -258,6 +283,25 @@ function GoalDetailDialog({
   return (
     <Dialog open onClose={onClose} title={goal.title} className="max-w-xl">
       <div className="space-y-4">
+        <div className="space-y-2">
+          {goal.imageUrl ? (
+            <img src={goal.imageUrl} alt="" className="h-32 w-full rounded-lg object-cover" />
+          ) : (
+            <div className="flex h-16 items-center justify-center rounded-lg bg-background text-xs text-muted">
+              No image
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={uploadImage} type="button">
+              <Upload size={13} /> Upload image
+            </Button>
+            {goal.imageUrl && (
+              <Button variant="outline" size="sm" onClick={() => onUpdate(goal.id, { imageUrl: null })} type="button">
+                <ImageOff size={13} /> Remove image
+              </Button>
+            )}
+          </div>
+        </div>
         <Field label="Title">
           <Input
             value={title}
