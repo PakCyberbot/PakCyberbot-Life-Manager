@@ -18,16 +18,17 @@ import clsx from 'clsx';
 // just projected onto this one live dial: at any ring position, the color
 // shown is whichever slot covers that position's *currently effective*
 // hour — the same AM/PM-flipping hour the printed number there is showing.
-// The whole face also acts like a forward-looking spotlight: whatever the
-// hand has already swept past *this revolution* — meaning it's now showing
-// what's next (12h away) rather than today's still-upcoming occurrence —
-// fades smoothly from full brightness right where the hand just passed
-// down to a dim floor at whatever was passed longest ago, while anything
-// still ahead (not yet swept, still relevant today) stays fully bright.
-// The fade recomputes every tick, so it visibly creeps forward with the
-// hand rather than jumping in discrete hourly steps. Below the face, an
-// "Up next" stack lists the slots still to come today soonest-first, with
-// a live countdown.
+// The whole face also acts like a forward-looking spotlight: one continuous
+// brightness ramp sweeps all the way around the dial, brightest exactly at
+// the hand's current position, dimming smoothly hour by hour through every
+// upcoming position (soonest next hour brightest, further-out hours a
+// little dimmer each), and bottoming out at the position the hand just
+// passed — not a flat "ahead = 100%, behind = dim" split, a genuine single
+// ramp with the peak and the floor sitting right next to each other at the
+// hand. Recomputes every tick, so it visibly rotates with the hand rather
+// than jumping in discrete hourly steps. Below the face, an "Up next"
+// stack lists the slots still to come today soonest-first, with a live
+// countdown.
 
 const SIZE = 280;
 const CENTER = SIZE / 2;
@@ -77,20 +78,21 @@ interface DialPosition {
   dim: number; // 0.3–1, see dimOpacityAt
 }
 
-/** Continuous forward-spotlight opacity for dial position `p` (0, 12]: full brightness (1) anywhere
- * still ahead of the hand this revolution (not yet passed, so still showing today's still-upcoming
- * occurrence); the moment the hand passes a position it starts fading, reaching PAST_FLOOR_OPACITY at
- * the position passed longest ago (right at the far edge of what's been swept so far). Normalized
- * against how much of the revolution the hand has swept (`handP` itself) rather than a fixed 12h
- * span, so the fade always visibly covers the *whole* passed arc — early in a revolution that arc is
- * short and the fade compresses into it; later it's most of the circle and the fade stretches across
- * all of it. Recomputed every tick (the hand moves continuously), so the fade visibly shifts with
- * every small movement, not just once an hour. */
+/** Continuous forward-spotlight opacity for dial position `p` (0, 12]: a single ramp all the way
+ * around the dial, not split into an "ahead = flat full brightness" zone plus a fade only behind the
+ * hand — brightest exactly where the hand is *right now*, then dimming smoothly hour by hour through
+ * every *upcoming* position (soonest next hour brightest of the rest, then the one after that a
+ * little dimmer, and so on all the way around), bottoming out at PAST_FLOOR_OPACITY on the position
+ * immediately *behind* the hand — the one it just passed, which is the farthest point away in the
+ * forward direction the spotlight is sweeping (it'll take nearly a full 12h revolution to light back
+ * up). `distance` is how far ahead (clockwise, in hours) `p` sits from the hand, wrapping a position
+ * that's actually behind the hand around to just under 12 rather than treating it as "already lit."
+ * Recomputed every tick (the hand moves continuously), so the whole ramp visibly rotates with it. */
 function dimOpacityAt(p: number, decimalHours: number): number {
   const handP = decimalHours % 12;
-  if (p >= handP) return 1;
-  const hoursAgo = handP - p;
-  const fraction = handP > 0 ? hoursAgo / handP : 0;
+  let distance = p - handP;
+  if (distance < 0) distance += 12; // p sits behind the hand — wrap to its forward (long way round) distance
+  const fraction = distance / 12; // [0, 1)
   return 1 - fraction * (1 - PAST_FLOOR_OPACITY);
 }
 
