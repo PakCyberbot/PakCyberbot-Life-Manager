@@ -8,10 +8,9 @@
 // here too without hitting WebView CORS restrictions.
 //
 // Phase 1 scope: db/settings, a working subset of system+media, local
-// backup (export/import), and Drive sync are real. Everything else desktop-
-// only (native file dialogs, AI provider calls, News/Jobs refresh) is a
-// deliberate stub — mobile's UI never calls these in Phase 1 (it's read-
-// mostly and doesn't run its own AI/RSS fetches), but the full
+// backup (export/import), Drive sync, and News refresh (see buildNews below)
+// are real. Everything else desktop-only (native file dialogs, other AI
+// provider calls, Jobs refresh) is a deliberate stub — but the full
 // LifeManagerApi shape is still implemented so the type contract stays
 // honest rather than silently narrowed.
 
@@ -37,8 +36,11 @@ import type {
   SystemApi,
 } from '@life-manager/core';
 import type { MobileDataStore } from '@life-manager/db/src/capacitorDriver';
+import type { NewsCategory, NewsItem } from '@life-manager/shared';
 import { createMobileDriveSync } from '../drive/mobileDriveSync';
 import { LocalFileOpener } from '../native/localFileOpener';
+import { buildNewsQuery, fetchNewsForCategory } from '../news/mobileNewsFetch';
+import type { AiProviderId } from '../news/mobileAiProviders';
 
 const NOT_AVAILABLE = 'Not available on mobile in this version.';
 
@@ -351,7 +353,67 @@ function buildBackup(store: MobileDataStore): BackupApi {
 // call or a live-fetch pipeline (RSS, job APIs) — mobile is read-mostly and
 // never triggers these itself in Phase 1; it only ever displays whatever the
 // synced DB already has. Stubs keep the type contract intact.
-const news: NewsApi = { fetch: async () => ({ ok: false, error: NOT_AVAILABLE }) };
+// Real port of main.ts's news:fetch handler + ai/news.ts/ai/providers.ts (see mobileNewsFetch.ts's
+// own header comment) — the one deliberate exception to Phase 1's "mobile never runs its own AI/RSS
+// fetches" boundary, since refreshing an EXISTING category from the phone is genuinely useful and the
+// underlying fetch/regex logic is already 100% portable. Adding a NEW category stays desktop-only —
+// nothing here creates a newsCategories row, only refreshes one that already exists.
+function buildNews(store: MobileDataStore): NewsApi {
+  return {
+    async fetch(categoryId) {
+      const category = await store.get<NewsCategory>('newsCategories', categoryId);
+      if (!category) return { ok: false, error: 'Category not found.' };
+
+      // 'blog' categories are a live site preview, not an RSS/AI digest — same branch as desktop's
+      // news:fetch handler, reusing the already-ported fetchWebPreview above.
+      if (category.type === 'blog') {
+        if (!category.url) return { ok: false, error: 'Set a URL for this blog/website in Settings first.' };
+        const preview = await fetchWebPreview(category.url);
+        if (!preview) return { ok: false, error: 'Could not load a preview for this URL — it may be blocking automated requests.' };
+        const now = new Date().toISOString();
+        const patch: Record<string, unknown> = { previewImage: preview.image, previewFavicon: preview.favicon, lastFetchedAt: now, updatedAt: now };
+        if (preview.title && category.name === category.url) patch.name = preview.title;
+        await store.update('newsCategories', categoryId, patch);
+        return { ok: true, items: [], category: await store.get('newsCategories', categoryId) };
+      }
+
+      const built = buildNewsQuery(category);
+      if ('error' in built) return { ok: false, error: built.error };
+
+      const provider = ((await store.getSetting('aiProvider')) as AiProviderId | null) ?? 'gemini';
+      const apiKey = await store.getSetting(`${provider}ApiKey`);
+      const ai = apiKey ? { provider, apiKey } : null;
+
+      const result = await fetchNewsForCategory(built.query, built.framing, ai);
+      if (result.error) return { ok: false, error: result.error };
+
+      // No replaceNewsItems driver method on mobile (only list/create/hardRemove exist generically)
+      // — do the hard-delete-then-reinsert at this layer instead of adding one, smaller surface area.
+      const existing = await store.list<NewsItem>('newsItems', { categoryId });
+      await Promise.all(existing.map((item) => store.hardRemove('newsItems', item.id)));
+      const now = new Date().toISOString();
+      await Promise.all(
+        result.items.map((item) =>
+          store.create('newsItems', {
+            id: crypto.randomUUID(),
+            categoryId,
+            title: item.title,
+            summary: item.summary,
+            url: item.url,
+            source: item.source,
+            publishedAt: item.publishedAt,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          })
+        )
+      );
+      await store.update('newsCategories', categoryId, { lastFetchedAt: now, updatedAt: now });
+
+      return { ok: true, items: await store.list('newsItems', { categoryId }), category: await store.get('newsCategories', categoryId) };
+    },
+  };
+}
 const entertainment: EntertainmentApi = { generateVerdict: async () => ({ ok: false, error: NOT_AVAILABLE }) };
 const earningWays: EarningWaysApi = {
   suggest: async () => ({ ok: false, error: NOT_AVAILABLE }),
@@ -374,7 +436,7 @@ export function buildMobileApi(store: MobileDataStore): LifeManagerApi {
     media,
     drive: createMobileDriveSync(store),
     backup: buildBackup(store),
-    news,
+    news: buildNews(store),
     entertainment,
     earningWays,
     jobs,
