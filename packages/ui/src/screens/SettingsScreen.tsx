@@ -29,11 +29,19 @@ import {
   Wallet,
   Wand2,
 } from 'lucide-react';
-import { getApi, useAiStatusStore, useJobsStore, useNewsStore, useQuotesStore, useSettingsStore, type DriveStatus } from '@life-manager/core';
+import {
+  getApi,
+  useAiStatusStore,
+  useJobsStore,
+  useNewsStore,
+  useQuotesStore,
+  useSettingsStore,
+  type ClockStyle,
+  type DriveStatus,
+} from '@life-manager/core';
 import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
-import { useClockStyle, type ClockStyle } from '../lib/clockStylePreference';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Switch } from '../components/ui/Switch';
@@ -41,9 +49,8 @@ import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 import clsx from 'clsx';
 
 export function SettingsScreen() {
-  const { readerPath, readerType, currency, loaded, load, setReader, autoDetectReader, clearReader, setCurrency } =
+  const { readerPath, readerType, currency, clockStyle, loaded, load, setReader, autoDetectReader, clearReader, setCurrency, setClockStyle } =
     useSettingsStore();
-  const [clockStyle, setClockStyle] = useClockStyle();
   const [detecting, setDetecting] = useState(false);
   const [currencyDraft, setCurrencyDraft] = useState(currency);
 

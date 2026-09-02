@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Clock, Copy, LayoutList, Pencil, Plus, Sunrise, Sunset, Trash2, Watch } from 'lucide-react';
-import { useTimeTableStore } from '@life-manager/core';
+import { useSettingsStore, useTimeTableStore } from '@life-manager/core';
 import { DAY_NAMES, formatMinutes, minutesBetween, type TimeSlot } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -10,7 +10,6 @@ import { ProgressBar } from '../components/ui/ProgressBar';
 import { EmptyState } from '../components/ui/EmptyState';
 import { TimeTableClock } from '../components/timetable/ClockView';
 import { LiveRotatingClock } from '../components/timetable/LiveRotatingClock';
-import { useClockStyle } from '../lib/clockStylePreference';
 import clsx from 'clsx';
 
 const SLOT_COLORS: { value: string; className: string }[] = [
@@ -30,9 +29,9 @@ type View = 'list' | 'clock';
 export function TimeTableScreen() {
   const { schedules, slots, fetchAll, updateSchedule, applyScheduleToDays, addSlot, updateSlot, removeSlot, cloneSlotToDays, loaded } =
     useTimeTableStore();
+  const { clockStyle, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
   const [dayOfWeek, setDayOfWeek] = useState(() => new Date().getDay());
   const [view, setView] = useState<View>('list');
-  const [clockStyle] = useClockStyle();
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
   const [slotDialogOpen, setSlotDialogOpen] = useState(false);
   const [editingSlot, setEditingSlot] = useState<TimeSlot | null>(null);
@@ -40,7 +39,8 @@ export function TimeTableScreen() {
 
   useEffect(() => {
     if (!loaded) fetchAll();
-  }, [loaded, fetchAll]);
+    if (!settingsLoaded) loadSettings();
+  }, [loaded, fetchAll, settingsLoaded, loadSettings]);
 
   const schedule = schedules.find((s) => s.dayOfWeek === dayOfWeek);
   const daySlots = useMemo(

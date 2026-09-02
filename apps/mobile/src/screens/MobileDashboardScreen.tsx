@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Quote as QuoteIcon, Shuffle } from 'lucide-react';
+import { LayoutList, Quote as QuoteIcon, Shuffle, Watch } from 'lucide-react';
 import {
   useCalendarStore,
   useGoalsStore,
@@ -11,8 +11,9 @@ import {
   pickRandomQuote,
 } from '@life-manager/core';
 import { DAY_NAMES, formatCurrency, formatDate, isSameMonth } from '@life-manager/shared';
-import { Card, CardContent, CardHeader, CardTitle, Badge, ProgressBar, TimeTableClock } from '@life-manager/ui';
+import { Card, CardContent, CardHeader, CardTitle, Badge, ProgressBar, TimeTableClock, LiveRotatingClock } from '@life-manager/ui';
 import type { MobileScreenId } from '../navigation';
+import clsx from 'clsx';
 
 const greetingFor = (hour: number) => {
   if (hour < 5) return 'Still up';
@@ -29,7 +30,14 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
   const { events, fetchEvents, loaded: eventsLoaded } = useCalendarStore();
   const { entries: savingsEntries, fetchAll: fetchMoney, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
-  const { currency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
+  const {
+    currency,
+    clockStyle,
+    dashboardTimeTableView,
+    setDashboardTimeTableView,
+    loaded: settingsLoaded,
+    load: loadSettings,
+  } = useSettingsStore();
   const { schedules, slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
   const [quoteIndex, setQuoteIndex] = useState(0);
 
@@ -67,7 +75,10 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
   );
   const totalSavings = useMemo(() => computeTotalSavings(savingsEntries), [savingsEntries]);
   const todaySchedule = useMemo(() => schedules.find((s) => s.dayOfWeek === todayDayOfWeek), [schedules, todayDayOfWeek]);
-  const todaySlots = useMemo(() => slots.filter((s) => s.dayOfWeek === todayDayOfWeek), [slots, todayDayOfWeek]);
+  const todaySlots = useMemo(
+    () => slots.filter((s) => s.dayOfWeek === todayDayOfWeek).sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [slots, todayDayOfWeek]
+  );
 
   return (
     <div className="space-y-6">
@@ -152,9 +163,51 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
       <Card>
         <CardHeader>
           <CardTitle>Today's Time Table — {DAY_NAMES[todayDayOfWeek]}</CardTitle>
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+            <button
+              onClick={() => setDashboardTimeTableView('list')}
+              className={clsx(
+                'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                dashboardTimeTableView === 'list' ? 'bg-surface text-foreground shadow-sm' : 'text-muted'
+              )}
+            >
+              <LayoutList size={12} />
+            </button>
+            <button
+              onClick={() => setDashboardTimeTableView('clock')}
+              className={clsx(
+                'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                dashboardTimeTableView === 'clock' ? 'bg-surface text-foreground shadow-sm' : 'text-muted'
+              )}
+            >
+              <Watch size={12} />
+            </button>
+          </div>
         </CardHeader>
         <CardContent>
-          <TimeTableClock schedule={todaySchedule} slots={todaySlots} />
+          {todaySlots.length === 0 ? (
+            <p className="text-xs text-muted">Nothing scheduled today.</p>
+          ) : dashboardTimeTableView === 'clock' ? (
+            clockStyle === 'liveRotating' ? (
+              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} />
+            ) : (
+              <TimeTableClock schedule={todaySchedule} slots={todaySlots} />
+            )
+          ) : (
+            <div className="space-y-1.5">
+              {todaySlots.map((slot) => (
+                <div key={slot.id} className="flex items-center gap-3 rounded-xl bg-background px-3 py-2">
+                  <span className="w-20 shrink-0 text-xs text-muted">
+                    {slot.startTime}–{slot.endTime}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{slot.label}</p>
+                    {slot.notes && <p className="truncate text-xs text-muted">{slot.notes}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
-import { CalendarClock, CalendarDays, Clock, Quote as QuoteIcon, Shuffle, Target, Wallet } from 'lucide-react';
+import { CalendarClock, CalendarDays, Clock, LayoutList, Quote as QuoteIcon, Shuffle, Target, Wallet, Watch } from 'lucide-react';
 import {
   useCalendarStore,
   useGoalsStore,
@@ -15,7 +15,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { TimeTableClock } from '../components/timetable/ClockView';
+import { LiveRotatingClock } from '../components/timetable/LiveRotatingClock';
 import type { ScreenId } from '../navigation';
+import clsx from 'clsx';
 
 const greetingFor = (hour: number) => {
   if (hour < 5) return 'Still up';
@@ -29,7 +32,14 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const { events, fetchEvents, loaded: eventsLoaded } = useCalendarStore();
   const { entries: savingsEntries, fetchAll, loaded: moneyLoaded } = useMoneyStore();
   const { quotes, fetchQuotes, loaded: quotesLoaded } = useQuotesStore();
-  const { currency: defaultCurrency, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
+  const {
+    currency: defaultCurrency,
+    clockStyle,
+    dashboardTimeTableView,
+    setDashboardTimeTableView,
+    loaded: settingsLoaded,
+    load: loadSettings,
+  } = useSettingsStore();
   const { schedules, slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
   const [quoteIndex, setQuoteIndex] = useState(0);
 
@@ -191,9 +201,33 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
             <CalendarClock size={15} className="text-accentCalendar" />
             Today's Time Table — {DAY_NAMES[todayDayOfWeek]}
           </CardTitle>
-          <button onClick={() => onNavigate('timeTable')} className="text-xs font-medium text-accentCalendar hover:underline">
-            Full Time Table →
-          </button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+              <button
+                onClick={() => setDashboardTimeTableView('list')}
+                title="List view"
+                className={clsx(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  dashboardTimeTableView === 'list' ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <LayoutList size={13} /> List
+              </button>
+              <button
+                onClick={() => setDashboardTimeTableView('clock')}
+                title="Clock view"
+                className={clsx(
+                  'flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  dashboardTimeTableView === 'clock' ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'
+                )}
+              >
+                <Watch size={13} /> Clock
+              </button>
+            </div>
+            <button onClick={() => onNavigate('timeTable')} className="text-xs font-medium text-accentCalendar hover:underline">
+              Full Time Table →
+            </button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {todaySchedule && (
@@ -204,6 +238,12 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
           )}
           {todaySlots.length === 0 ? (
             <EmptyState title="Nothing scheduled today" description="Add time slots in Time Table to see today's plan here." />
+          ) : dashboardTimeTableView === 'clock' ? (
+            clockStyle === 'liveRotating' ? (
+              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} />
+            ) : (
+              <TimeTableClock schedule={todaySchedule} slots={todaySlots} />
+            )
           ) : (
             <div className="space-y-1.5">
               {todaySlots.map((slot) => (

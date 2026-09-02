@@ -3,6 +3,15 @@ import { TOGGLEABLE_SECTIONS, type ToggleableSectionId } from '@life-manager/sha
 import { getApi } from '../api';
 
 export type ReaderType = 'adobe' | 'foxit' | 'custom';
+/** Which Time Table clock face to render wherever a clock view is shown — Classic (ClockView.tsx,
+ * two static AM/PM rings) or the newer LiveRotatingClock.tsx (one live face, continuously-flipping
+ * AM/PM labels). A DB-backed setting (not localStorage) so the choice is the same on every device,
+ * desktop or mobile, once Drive sync carries it over — unlike theme, which really is per-device. */
+export type ClockStyle = 'classic' | 'liveRotating';
+/** List or Clock for the Dashboard's "Today's Time Table" card specifically — independent of the
+ * full Time Table screen's own List/Clock toggle, which stays a plain per-session choice (not asked
+ * to persist). Also DB-backed, for the same cross-device reason as clockStyle. */
+export type DashboardTimeTableView = 'list' | 'clock';
 
 const DEFAULT_CURRENCY = 'USD';
 
@@ -10,6 +19,8 @@ interface SettingsState {
   readerPath: string | null;
   readerType: ReaderType | null;
   currency: string;
+  clockStyle: ClockStyle;
+  dashboardTimeTableView: DashboardTimeTableView;
   /** Every section defaults to enabled; only what's explicitly turned off shows up here as false. */
   enabledSections: Record<ToggleableSectionId, boolean>;
   loaded: boolean;
@@ -18,6 +29,8 @@ interface SettingsState {
   autoDetectReader: () => Promise<boolean>;
   clearReader: () => Promise<void>;
   setCurrency: (code: string) => Promise<void>;
+  setClockStyle: (style: ClockStyle) => Promise<void>;
+  setDashboardTimeTableView: (view: DashboardTimeTableView) => Promise<void>;
   setSectionEnabled: (id: ToggleableSectionId, enabled: boolean) => Promise<void>;
 }
 
@@ -29,15 +42,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   readerPath: null,
   readerType: null,
   currency: DEFAULT_CURRENCY,
+  clockStyle: 'classic',
+  dashboardTimeTableView: 'list',
   enabledSections: allEnabled(),
   loaded: false,
 
   async load() {
-    const [readerPath, readerType, currency, disabledRaw] = await Promise.all([
+    const [readerPath, readerType, currency, disabledRaw, clockStyleRaw, dashboardTimeTableViewRaw] = await Promise.all([
       getApi().settings.get('readerPath'),
       getApi().settings.get('readerType'),
       getApi().settings.get('currency'),
       getApi().settings.get('disabledSections'),
+      getApi().settings.get('timeTableClockStyle'),
+      getApi().settings.get('dashboardTimeTableView'),
     ]);
     const disabled = new Set(
       (disabledRaw ?? '')
@@ -53,6 +70,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       readerPath: readerPath || null,
       readerType: (readerType as ReaderType) || null,
       currency: currency || DEFAULT_CURRENCY,
+      clockStyle: clockStyleRaw === 'liveRotating' ? 'liveRotating' : 'classic',
+      dashboardTimeTableView: dashboardTimeTableViewRaw === 'clock' ? 'clock' : 'list',
       enabledSections,
       loaded: true,
     });
@@ -79,6 +98,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const normalized = code.trim().toUpperCase().slice(0, 3) || DEFAULT_CURRENCY;
     await getApi().settings.set('currency', normalized);
     set({ currency: normalized });
+  },
+
+  async setClockStyle(style) {
+    await getApi().settings.set('timeTableClockStyle', style);
+    set({ clockStyle: style });
+  },
+
+  async setDashboardTimeTableView(view) {
+    await getApi().settings.set('dashboardTimeTableView', view);
+    set({ dashboardTimeTableView: view });
   },
 
   async setSectionEnabled(id, enabled) {
