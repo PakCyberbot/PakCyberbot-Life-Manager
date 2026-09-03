@@ -418,12 +418,14 @@ function GoalDetailDialog({
   // Milestone-linked tasks render nested under their milestone (below), not in this flat list.
   const goalLevelTasks = tasks.filter((t) => t.linkedGoalId === goal.id && !t.linkedMilestoneId);
   const [newMilestone, setNewMilestone] = useState('');
-  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
+  // Also doubles as the milestone quick-add: { milestoneId: null } for goal-level "Add task",
+  // { milestoneId: m.id } for a milestone's own "Add task" — both open the same full TaskDialog
+  // popup (link/priority/notes and all), not a bare title-only input.
+  const [addTaskFor, setAddTaskFor] = useState<{ milestoneId: string | null } | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [hostname, setHostname] = useState<string | null>(null);
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
   const [assignExistingFor, setAssignExistingFor] = useState<{ milestoneId: string | null } | null>(null);
-  const [milestoneQuickAdd, setMilestoneQuickAdd] = useState<Record<string, string>>({});
 
   const toggleExpanded = (milestoneId: string) => {
     setExpandedMilestones((prev) => {
@@ -432,13 +434,6 @@ function GoalDetailDialog({
       else next.add(milestoneId);
       return next;
     });
-  };
-
-  const addMilestoneSubtask = async (milestoneId: string) => {
-    const title = (milestoneQuickAdd[milestoneId] ?? '').trim();
-    if (!title) return;
-    await addTask({ title, priority: 'medium', linkedGoalId: goal.id, linkedMilestoneId: milestoneId });
-    setMilestoneQuickAdd((prev) => ({ ...prev, [milestoneId]: '' }));
   };
 
   // Editable goal fields — local state so typing doesn't fight the parent's
@@ -627,15 +622,8 @@ function GoalDetailDialog({
                         </div>
                       ))}
                       <div className="flex gap-2 pt-1">
-                        <Input
-                          value={milestoneQuickAdd[m.id] ?? ''}
-                          onChange={(e) => setMilestoneQuickAdd((prev) => ({ ...prev, [m.id]: e.target.value }))}
-                          placeholder="Add a task"
-                          className="h-7 !py-1 !text-xs"
-                          onKeyDown={(e) => e.key === 'Enter' && addMilestoneSubtask(m.id)}
-                        />
-                        <Button size="sm" variant="outline" onClick={() => addMilestoneSubtask(m.id)}>
-                          Add
+                        <Button size="sm" variant="outline" onClick={() => setAddTaskFor({ milestoneId: m.id })}>
+                          <Plus size={13} /> Add task
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setAssignExistingFor({ milestoneId: m.id })}>
                           Assign existing
@@ -669,7 +657,7 @@ function GoalDetailDialog({
               <Button size="sm" variant="outline" onClick={() => setAssignExistingFor({ milestoneId: null })}>
                 Assign existing
               </Button>
-              <Button size="sm" variant="outline" onClick={() => setTaskDialogOpen(true)}>
+              <Button size="sm" variant="outline" onClick={() => setAddTaskFor({ milestoneId: null })}>
                 <Plus size={13} /> Add task
               </Button>
             </div>
@@ -727,7 +715,16 @@ function GoalDetailDialog({
         </div>
       </div>
 
-      <TaskDialog open={taskDialogOpen} onClose={() => setTaskDialogOpen(false)} goal={goal} onCreate={addTask} />
+      {addTaskFor && (
+        <TaskDialog
+          open
+          onClose={() => setAddTaskFor(null)}
+          goal={goal}
+          milestoneId={addTaskFor.milestoneId}
+          milestoneTitle={addTaskFor.milestoneId ? milestones.find((m) => m.id === addTaskFor.milestoneId)?.title : undefined}
+          onCreate={addTask}
+        />
+      )}
       {editingTask && (
         <TaskDialog
           open
@@ -760,6 +757,8 @@ function TaskDialog({
   onClose,
   goal,
   task,
+  milestoneId,
+  milestoneTitle,
   onCreate,
   onUpdate,
 }: {
@@ -769,6 +768,12 @@ function TaskDialog({
   goal?: Goal;
   /** When present, edits this existing task instead of creating a new one. */
   task?: Task;
+  /** When present (and not editing), the created task nests under this milestone instead of
+   * sitting at goal-level — the milestone quick-add's "Add task" button passes this so it opens
+   * the same full dialog goal-level "Add task" uses, instead of a bare title-only input. */
+  milestoneId?: string | null;
+  /** Only used for the dialog's own title text. */
+  milestoneTitle?: string;
   onCreate: ReturnType<typeof useTasksStore.getState>['addTask'];
   onUpdate?: ReturnType<typeof useTasksStore.getState>['updateTask'];
 }) {
@@ -881,7 +886,7 @@ function TaskDialog({
     if (isEditing && task && onUpdate) {
       await onUpdate(task.id, payload);
     } else {
-      await onCreate({ ...payload, linkedGoalId: goal?.id ?? null });
+      await onCreate({ ...payload, linkedGoalId: goal?.id ?? null, linkedMilestoneId: milestoneId ?? null });
     }
     setSubmitting(false);
     reset();
@@ -891,7 +896,9 @@ function TaskDialog({
   const dialogTitle = goal
     ? isEditing
       ? `Edit task — ${goal.title}`
-      : `New task — ${goal.title}`
+      : milestoneTitle
+        ? `New task — ${milestoneTitle}`
+        : `New task — ${goal.title}`
     : isEditing
       ? 'Edit quick task'
       : 'New quick task';
