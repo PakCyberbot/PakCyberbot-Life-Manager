@@ -93,6 +93,44 @@ Two gotchas hit for real cutting 1.1.0, both silent/misleading until diagnosed:
 
 Verify the signature with `apksigner verify --verbose app-release.apk` **run from inside the same directory as the APK** (a POSIX-style path like `/c/Users/...` passed as an argument to the SDK's `apksigner.bat` from git-bash gets mangled into a literal `\c\Users\...` that Java's `RandomAccessFile` can't open — `cd` into the folder and reference the file by bare name instead) from the SDK's `build-tools/<version>/` — not `jarsigner -verify`, see the Release signing note below for why.
 
+**Debug APK, for a quick test build with no signing setup at all**: same `JAVA_HOME`/`GRADLE_OPTS` env vars as above, then just `.\gradlew.bat assembleDebug` (no `-P` signing properties needed — it self-signs with Android's own throwaway debug key). Output lands at `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`. **Debug and release builds have different signatures** — installing one over an existing install of the other fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`; `adb uninstall com.pakcyberbot.lifemanager` first (or uninstall from the device) before switching between them. Use this path whenever iterating on a fix that needs a real build to test, not the full signed release.
+
+**Verify on an emulator or real device before calling a release done — do not skip this.** A clean `npm run typecheck` + successful builds only prove the code compiles; the actual bug that prompted this checklist (per-book Drive sync's Download button silently never appearing for any book synced from desktop — see the git history around "books synced from desktop never showed a Download affordance") passed typecheck, both builds, and a `cap sync android` completely cleanly, and was only ever going to be caught by someone actually clicking through the real flow. From the repo root:
+```
+emulator -list-avds                      # confirm an AVD exists (Pixel_9 used historically)
+emulator -avd Pixel_9 -no-snapshot-load & # boot it in the background
+adb devices                              # wait for "device" (not "offline")
+cd apps/mobile/android/app/build/outputs/apk/debug   # (or release/ — cd in, same path-mangling reasoning as apksigner above)
+adb install -r app-debug.apk
+adb shell am start -n com.pakcyberbot.lifemanager/.MainActivity
+adb logcat -d --pid=$(adb shell pidof com.pakcyberbot.lifemanager) *:E   # check for FATAL EXCEPTION, not just that it launched
+adb exec-out screencap -p > screenshot.png                              # then actually look at it
+```
+This only proves the app *boots* — it does not exercise any feature-specific flow (a new screen, a new sync path, a new dialog). For whatever's actually new in the release, click through it for real: `adb shell input tap <x> <y>` driven off a screenshot (screen coordinates from a screenshot need multiplying by `realWidth / displayedWidth` if the image was scaled down for viewing) can drive an emulator through an add/open/edit flow end to end, the same way this was done live for the 1.1.0 Library/reader flow. Where the bug is about data reaching another device via Drive sync specifically (like the one above) — an emulator alone can't reproduce that; it needs the user's own real device and real Drive account, so send a debug APK and ask them to click through the specific flow that changed rather than declaring it done from typecheck alone.
+
+### Writing the GitHub release description
+
+Structure that's worked for 1.0.0/1.1.0 — copy this shape, fill in what actually shipped (check `git log <previous-tag>..HEAD --oneline` for the real list, don't guess):
+
+````markdown
+## Highlights
+- **<Feature name>** — one or two plain-language sentences on what changed and why it matters to the user, not how it was implemented.
+- (one bullet per user-facing feature/fix worth calling out — 4-8 bullets is typical, skip pure-internal refactors)
+
+## Full changelog
+- <Terser, one-line-per-change version of the same list, plus anything minor that didn't earn a Highlights bullet>
+
+## Downloads
+- **Windows**: `PakCyberbot-Life-Manager-Setup-<version>.exe` (unsigned — Windows SmartScreen will warn "unknown publisher" on first run; click More info → Run anyway).
+- **Android**: `PakCyberbot-Life-Manager-<version>.apk` (signed with the release key — installs as an update over an existing install, no uninstall needed *unless* a debug APK was tested in between, see the debug/release signature-mismatch note above).
+
+## Notes
+- Anything the user needs to *do* for a new feature to work (e.g. "needs Google Drive already connected in Settings").
+- Any honest caveat about what's least battle-tested in this release — this project's own established style is to flag the riskiest/newest piece rather than imply everything was verified equally.
+````
+
+Tag as `v<version>` (e.g. `v1.1.0`), title the release the same. Write this *after* both builds are done and at least boot-verified (previous paragraph) — not before, since "what shipped" should describe what's actually in the artifacts being uploaded, not what was merely intended.
+
 ### In-app PDF viewer + automatic bookmark (`apps/desktop/electron/main.ts`)
 
 Books open in a dedicated `BrowserWindow` using Chromium's own built-in PDF viewer (`webPreferences.plugins: true`), not an external reader — deliberate, since neither Adobe nor Foxit expose any API to ask "what page is the user on," so automatic bookmark tracking is only possible for a viewer this app controls. The viewer updates its window URL as `#page=N` while scrolling; `did-navigate-in-page` on that window's `webContents` catches it (`parsePageFromUrl`), and on window close the last-seen page is written to the book's `bookmarkPage` and pushed to the renderer via the `book:bookmarkUpdated` IPC event (see `useBooksStore.subscribeToBookmarkUpdates`). A separate "open externally" path (configured Adobe/Foxit, or the OS default via a `file://…#page=N` URL) exists but can't auto-track — there's no way to observe another process's reading position.
