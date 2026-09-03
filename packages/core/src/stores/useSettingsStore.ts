@@ -12,6 +12,11 @@ export type ClockStyle = 'classic' | 'liveRotating';
  * full Time Table screen's own List/Clock toggle, which stays a plain per-session choice (not asked
  * to persist). Also DB-backed, for the same cross-device reason as clockStyle. */
 export type DashboardTimeTableView = 'list' | 'clock';
+/** 12-hour (AM/PM) vs. 24-hour ("military") numerals for the Live Rotating Clock specifically — the
+ * Classic clock view (ClockView.tsx) always shows two fixed AM/PM faces regardless of this setting,
+ * since it has no single continuous dial for a 24h numbering to make sense on. DB-backed for the
+ * same cross-device reason as clockStyle. */
+export type ClockTimeFormat = '12h' | '24h';
 
 const DEFAULT_CURRENCY = 'USD';
 
@@ -21,6 +26,7 @@ interface SettingsState {
   currency: string;
   clockStyle: ClockStyle;
   dashboardTimeTableView: DashboardTimeTableView;
+  clockTimeFormat: ClockTimeFormat;
   /** Every section defaults to enabled; only what's explicitly turned off shows up here as false. */
   enabledSections: Record<ToggleableSectionId, boolean>;
   loaded: boolean;
@@ -31,6 +37,7 @@ interface SettingsState {
   setCurrency: (code: string) => Promise<void>;
   setClockStyle: (style: ClockStyle) => Promise<void>;
   setDashboardTimeTableView: (view: DashboardTimeTableView) => Promise<void>;
+  setClockTimeFormat: (format: ClockTimeFormat) => Promise<void>;
   setSectionEnabled: (id: ToggleableSectionId, enabled: boolean) => Promise<void>;
 }
 
@@ -44,17 +51,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   currency: DEFAULT_CURRENCY,
   clockStyle: 'classic',
   dashboardTimeTableView: 'list',
+  clockTimeFormat: '12h',
   enabledSections: allEnabled(),
   loaded: false,
 
   async load() {
-    const [readerPath, readerType, currency, disabledRaw, clockStyleRaw, dashboardTimeTableViewRaw] = await Promise.all([
+    const [readerPath, readerType, currency, disabledRaw, clockStyleRaw, dashboardTimeTableViewRaw, clockTimeFormatRaw] = await Promise.all([
       getApi().settings.get('readerPath'),
       getApi().settings.get('readerType'),
       getApi().settings.get('currency'),
       getApi().settings.get('disabledSections'),
       getApi().settings.get('timeTableClockStyle'),
       getApi().settings.get('dashboardTimeTableView'),
+      getApi().settings.get('timeTableClockTimeFormat'),
     ]);
     const disabled = new Set(
       (disabledRaw ?? '')
@@ -72,6 +81,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       currency: currency || DEFAULT_CURRENCY,
       clockStyle: clockStyleRaw === 'liveRotating' ? 'liveRotating' : 'classic',
       dashboardTimeTableView: dashboardTimeTableViewRaw === 'clock' ? 'clock' : 'list',
+      clockTimeFormat: clockTimeFormatRaw === '24h' ? '24h' : '12h',
       enabledSections,
       loaded: true,
     });
@@ -108,6 +118,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   async setDashboardTimeTableView(view) {
     await getApi().settings.set('dashboardTimeTableView', view);
     set({ dashboardTimeTableView: view });
+  },
+
+  async setClockTimeFormat(format) {
+    await getApi().settings.set('timeTableClockTimeFormat', format);
+    set({ clockTimeFormat: format });
   },
 
   async setSectionEnabled(id, enabled) {

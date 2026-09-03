@@ -33,6 +33,7 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
   const {
     currency,
     clockStyle,
+    clockTimeFormat,
     dashboardTimeTableView,
     setDashboardTimeTableView,
     loaded: settingsLoaded,
@@ -189,7 +190,7 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
             <p className="text-xs text-muted">Nothing scheduled today.</p>
           ) : dashboardTimeTableView === 'clock' ? (
             clockStyle === 'liveRotating' ? (
-              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} />
+              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} timeFormat={clockTimeFormat} />
             ) : (
               <TimeTableClock schedule={todaySchedule} slots={todaySlots} />
             )

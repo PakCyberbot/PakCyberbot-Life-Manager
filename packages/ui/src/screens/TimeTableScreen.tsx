@@ -29,7 +29,7 @@ type View = 'list' | 'clock';
 export function TimeTableScreen() {
   const { schedules, slots, fetchAll, updateSchedule, applyScheduleToDays, addSlot, updateSlot, removeSlot, cloneSlotToDays, loaded } =
     useTimeTableStore();
-  const { clockStyle, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
+  const { clockStyle, clockTimeFormat, loaded: settingsLoaded, load: loadSettings } = useSettingsStore();
   const [dayOfWeek, setDayOfWeek] = useState(() => new Date().getDay());
   const [view, setView] = useState<View>('list');
   const [applyDialogOpen, setApplyDialogOpen] = useState(false);
@@ -165,7 +165,7 @@ export function TimeTableScreen() {
             />
           ) : view === 'clock' ? (
             clockStyle === 'liveRotating' ? (
-              <LiveRotatingClock schedule={schedule} slots={daySlots} />
+              <LiveRotatingClock schedule={schedule} slots={daySlots} timeFormat={clockTimeFormat} />
             ) : (
               <TimeTableClock schedule={schedule} slots={daySlots} />
             )

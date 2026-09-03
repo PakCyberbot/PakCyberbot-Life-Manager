@@ -153,7 +153,20 @@ function colorForHour(hour: number, slots: TimeSlot[], schedule: DaySchedule | u
   return null;
 }
 
-export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule | undefined; slots: TimeSlot[] }) {
+export function LiveRotatingClock({
+  schedule,
+  slots,
+  timeFormat = '12h',
+}: {
+  schedule: DaySchedule | undefined;
+  slots: TimeSlot[];
+  /** '12h' (default): dial positions flip their AM/PM label as the hand sweeps past, plus the
+   * AM/PM badge pair below the face. '24h' (military): each dial position shows its plain
+   * 2-digit effective hour (00–23, reusing the exact same flip instant as '12h' — only what's
+   * rendered changes, not when it changes) and the badge pair + digital readout's AM/PM suffix
+   * are dropped entirely, per the explicit ask that "AM/PM isn't needed at all" in this mode. */
+  timeFormat?: '12h' | '24h';
+}) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -220,26 +233,38 @@ export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule |
             );
           })}
 
-          {/* hour number + its live-flipping AM/PM suffix, dimmed once the hand has swept past it */}
+          {/* hour number, dimmed once the hand has swept past it. '12h': plain 1–12 label plus its
+              live-flipping AM/PM suffix. '24h': the same position's effective 00–23 military hour
+              instead — same flip instant, just a different number and no suffix line at all. */}
           {positions.map((pos) => {
             const numberPos = polarToCartesian(RING_INNER - 15, pos.angle);
             return (
               <g key={pos.label} style={TRANSITION} opacity={pos.dim}>
-                <text x={numberPos.x} y={numberPos.y - 5} textAnchor="middle" dominantBaseline="middle" fontSize={13} fontWeight={600} fill="rgb(var(--color-foreground))">
-                  {pos.label}
-                </text>
                 <text
                   x={numberPos.x}
-                  y={numberPos.y + 9}
+                  y={numberPos.y + (timeFormat === '24h' ? 0 : -5)}
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  fontSize={7}
+                  fontSize={13}
                   fontWeight={600}
-                  letterSpacing={0.5}
-                  fill="rgb(var(--color-muted))"
+                  fill="rgb(var(--color-foreground))"
                 >
-                  {pos.isPM ? 'PM' : 'AM'}
+                  {timeFormat === '24h' ? String(effectiveHourAt(pos.label, decimalHours)).padStart(2, '0') : pos.label}
                 </text>
+                {timeFormat === '12h' && (
+                  <text
+                    x={numberPos.x}
+                    y={numberPos.y + 9}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={7}
+                    fontWeight={600}
+                    letterSpacing={0.5}
+                    fill="rgb(var(--color-muted))"
+                  >
+                    {pos.isPM ? 'PM' : 'AM'}
+                  </text>
+                )}
               </g>
             );
           })}
@@ -258,13 +283,15 @@ export function LiveRotatingClock({ schedule, slots }: { schedule: DaySchedule |
           <circle cx={CENTER} cy={CENTER} r={5} fill="rgb(var(--color-primary))" />
         </svg>
 
-        <div className="flex items-center gap-3">
-          <PeriodBadge label="AM" icon={Sun} active={!isCurrentlyPM} />
-          <PeriodBadge label="PM" icon={Moon} active={isCurrentlyPM} />
-        </div>
+        {timeFormat === '12h' && (
+          <div className="flex items-center gap-3">
+            <PeriodBadge label="AM" icon={Sun} active={!isCurrentlyPM} />
+            <PeriodBadge label="PM" icon={Moon} active={isCurrentlyPM} />
+          </div>
+        )}
 
         <p className="text-xs text-muted">
-          {now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          {now.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: timeFormat === '12h' })}
         </p>
       </div>
 

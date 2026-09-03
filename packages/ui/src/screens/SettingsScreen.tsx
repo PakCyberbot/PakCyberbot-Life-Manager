@@ -37,6 +37,7 @@ import {
   useQuotesStore,
   useSettingsStore,
   type ClockStyle,
+  type ClockTimeFormat,
   type DriveStatus,
 } from '@life-manager/core';
 import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
@@ -49,8 +50,21 @@ import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 import clsx from 'clsx';
 
 export function SettingsScreen() {
-  const { readerPath, readerType, currency, clockStyle, loaded, load, setReader, autoDetectReader, clearReader, setCurrency, setClockStyle } =
-    useSettingsStore();
+  const {
+    readerPath,
+    readerType,
+    currency,
+    clockStyle,
+    clockTimeFormat,
+    loaded,
+    load,
+    setReader,
+    autoDetectReader,
+    clearReader,
+    setCurrency,
+    setClockStyle,
+    setClockTimeFormat,
+  } = useSettingsStore();
   const [detecting, setDetecting] = useState(false);
   const [currencyDraft, setCurrencyDraft] = useState(currency);
 
@@ -99,6 +113,18 @@ export function SettingsScreen() {
               <Select value={clockStyle} onChange={(e) => setClockStyle(e.target.value as ClockStyle)}>
                 <option value="classic">Classic view</option>
                 <option value="liveRotating">Live Rotating Clock view</option>
+              </Select>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            <div>
+              <p className="text-sm font-medium">Clock time format</p>
+              <p className="text-xs text-muted">12-hour AM/PM or 24-hour military time — Live Rotating Clock view only.</p>
+            </div>
+            <div className="w-48 shrink-0">
+              <Select value={clockTimeFormat} onChange={(e) => setClockTimeFormat(e.target.value as ClockTimeFormat)}>
+                <option value="12h">12-hour (AM/PM)</option>
+                <option value="24h">24-hour (military)</option>
               </Select>
             </div>
           </div>

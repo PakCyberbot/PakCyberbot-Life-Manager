@@ -35,6 +35,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
   const {
     currency: defaultCurrency,
     clockStyle,
+    clockTimeFormat,
     dashboardTimeTableView,
     setDashboardTimeTableView,
     loaded: settingsLoaded,
@@ -240,7 +241,7 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
             <EmptyState title="Nothing scheduled today" description="Add time slots in Time Table to see today's plan here." />
           ) : dashboardTimeTableView === 'clock' ? (
             clockStyle === 'liveRotating' ? (
-              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} />
+              <LiveRotatingClock schedule={todaySchedule} slots={todaySlots} timeFormat={clockTimeFormat} />
             ) : (
               <TimeTableClock schedule={todaySchedule} slots={todaySlots} />
             )
