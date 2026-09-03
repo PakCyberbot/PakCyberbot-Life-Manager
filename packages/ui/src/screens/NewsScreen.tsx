@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink, Globe, MonitorPlay, Newspaper, RefreshCw, Settings as SettingsIcon } from 'lucide-react';
 import { getApi, useNewsStore } from '@life-manager/core';
 import { formatDate, type NewsCategory, type NewsItem } from '@life-manager/shared';
@@ -6,12 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
-import type { ScreenId } from '../navigation';
+import { NewsCategoriesDialog } from '../components/news/NewsCategoriesDialog';
 import clsx from 'clsx';
 
-export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }) {
+export function NewsScreen() {
   const { categories, itemsByCategory, loadingByCategory, errorByCategory, loaded, fetchCategories, fetchCachedItems, refreshCategory } =
     useNewsStore();
+  const [categoriesDialogOpen, setCategoriesDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loaded) fetchCategories();
@@ -33,7 +34,7 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
           <h1 className="text-2xl font-semibold tracking-tight">News & Updates</h1>
           <p className="mt-1 text-sm text-muted">Real articles, ranked and summarized for what you care about.</p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => onNavigate('settings')}>
+        <Button variant="outline" size="sm" onClick={() => setCategoriesDialogOpen(true)}>
           <SettingsIcon size={14} /> Manage categories
         </Button>
       </div>
@@ -42,7 +43,12 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
         <EmptyState
           icon={<Newspaper size={28} />}
           title="No categories yet"
-          description="Add one from Settings — starts seeded with Cybersecurity, Global Politics, and Country/City."
+          description="Add one below — starts seeded with Cybersecurity, Global Politics, and Country/City."
+          action={
+            <Button size="sm" onClick={() => setCategoriesDialogOpen(true)}>
+              <Newspaper size={14} /> Manage categories
+            </Button>
+          }
         />
       ) : (
         <>
@@ -50,7 +56,7 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
             categories={blogCategories}
             loadingByCategory={loadingByCategory}
             onRefresh={(id) => refreshCategory(id)}
-            onNavigate={onNavigate}
+            onManageCategories={() => setCategoriesDialogOpen(true)}
           />
 
           <div className="space-y-6">
@@ -62,12 +68,14 @@ export function NewsScreen({ onNavigate }: { onNavigate: (s: ScreenId) => void }
                 loading={!!loadingByCategory[category.id]}
                 error={errorByCategory[category.id] ?? null}
                 onRefresh={() => refreshCategory(category.id)}
-                onNavigate={onNavigate}
+                onManageCategories={() => setCategoriesDialogOpen(true)}
               />
             ))}
           </div>
         </>
       )}
+
+      <NewsCategoriesDialog open={categoriesDialogOpen} onClose={() => setCategoriesDialogOpen(false)} />
     </div>
   );
 }
@@ -82,12 +90,12 @@ function BlogsSection({
   categories,
   loadingByCategory,
   onRefresh,
-  onNavigate,
+  onManageCategories,
 }: {
   categories: NewsCategory[];
   loadingByCategory: Record<string, boolean>;
   onRefresh: (id: string) => void;
-  onNavigate: (s: ScreenId) => void;
+  onManageCategories: () => void;
 }) {
   if (categories.length === 0) {
     return (
@@ -95,9 +103,9 @@ function BlogsSection({
         <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div className="flex items-center gap-2 text-sm text-muted">
             <Globe size={16} className="shrink-0" />
-            Add a blog or website in Settings for a live, scrollable preview right here.
+            Add a blog or website for a live, scrollable preview right here.
           </div>
-          <Button size="sm" variant="outline" onClick={() => onNavigate('settings')}>
+          <Button size="sm" variant="outline" onClick={onManageCategories}>
             Add one
           </Button>
         </CardContent>
@@ -178,14 +186,14 @@ function CategorySection({
   loading,
   error,
   onRefresh,
-  onNavigate,
+  onManageCategories,
 }: {
   category: NewsCategory;
   items: NewsItem[];
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
-  onNavigate: (s: ScreenId) => void;
+  onManageCategories: () => void;
 }) {
   const needsLocation = (category.type === 'country' || category.type === 'city') && !category.locationValue;
 
@@ -210,11 +218,11 @@ function CategorySection({
       <CardContent>
         {needsLocation ? (
           <EmptyState
-            title={`Set a ${category.type} in Settings`}
+            title={`Set a ${category.type}`}
             description="This category needs a location before it can fetch anything."
             action={
-              <Button size="sm" variant="outline" onClick={() => onNavigate('settings')}>
-                Go to Settings
+              <Button size="sm" variant="outline" onClick={onManageCategories}>
+                Manage categories
               </Button>
             }
           />

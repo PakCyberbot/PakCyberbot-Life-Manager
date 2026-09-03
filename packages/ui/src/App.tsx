@@ -40,7 +40,7 @@ export function App() {
         {screen === 'timeTable' && <TimeTableScreen />}
         {screen === 'money' && <MoneyScreen />}
         {screen === 'library' && <LibraryScreen />}
-        {screen === 'news' && <NewsScreen onNavigate={setScreen} />}
+        {screen === 'news' && <NewsScreen />}
         {screen === 'entertainment' && <EntertainmentScreen />}
         {screen === 'earningWays' && <EarningWaysScreen />}
         {screen === 'jobs' && <JobsScreen onNavigate={setScreen} />}

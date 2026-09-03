@@ -14,7 +14,6 @@ import {
   ExternalLink,
   FolderOpen,
   FolderTree,
-  Globe,
   HeartPulse,
   LayoutGrid,
   Library,
@@ -40,13 +39,14 @@ import {
   type ClockTimeFormat,
   type DriveStatus,
 } from '@life-manager/core';
-import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type NewsCategory, type ToggleableSectionId } from '@life-manager/shared';
+import { TOGGLEABLE_SECTIONS, type AiProviderId, type JobSearch, type ToggleableSectionId } from '@life-manager/shared';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { ThemeToggle } from '../theme/ThemeToggle';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Switch } from '../components/ui/Switch';
 import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
+import { NewsCategoriesDialog } from '../components/news/NewsCategoriesDialog';
 import clsx from 'clsx';
 
 export function SettingsScreen() {
@@ -632,32 +632,12 @@ function AiProvidersCard() {
 // ---------------------------------------------------------------------------
 
 function NewsCategoriesCard() {
-  const { categories, fetchCategories, addCustomCategory, addBlogCategory, updateCategory, removeCategory, loaded } = useNewsStore();
-  const [name, setName] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [blogUrl, setBlogUrl] = useState('');
-  const [blogLabel, setBlogLabel] = useState('');
-  const [addingBlog, setAddingBlog] = useState(false);
+  const { categories, fetchCategories, loaded } = useNewsStore();
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!loaded) fetchCategories();
   }, [loaded, fetchCategories]);
-
-  const submit = async () => {
-    if (!name.trim() || !prompt.trim()) return;
-    await addCustomCategory(name.trim(), prompt.trim());
-    setName('');
-    setPrompt('');
-  };
-
-  const submitBlog = async () => {
-    if (!blogUrl.trim()) return;
-    setAddingBlog(true);
-    await addBlogCategory(blogUrl.trim(), blogLabel.trim());
-    setAddingBlog(false);
-    setBlogUrl('');
-    setBlogLabel('');
-  };
 
   return (
     <Card>
@@ -665,104 +645,18 @@ function NewsCategoriesCard() {
         <CardTitle>News & Updates categories</CardTitle>
         <Badge tone="calendar">{categories.length}</Badge>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <p className="flex items-start gap-2 text-sm text-muted">
           <Newspaper size={16} className="mt-0.5 shrink-0" />
-          Each category becomes a section on the News & Updates page. Custom categories are fully yours (name +
-          what the AI should judge as relevant); Country/City just need a location; Blogs & Websites show a live,
-          scrollable preview of a real page instead of an AI-summarized digest.
+          Each category becomes a section on the News & Updates page — custom categories, Country/City, or a
+          Blog/Website with a live preview. Managed in a popup so this list can grow without stretching Settings.
         </p>
-
-        <div className="space-y-2">
-          {categories.map((c) => (
-            <CategoryRow key={c.id} category={c} onUpdate={updateCategory} onRemove={removeCategory} />
-          ))}
-        </div>
-
-        <div className="space-y-2 border-t border-border pt-3">
-          <p className="text-xs font-medium text-muted">Add a custom category</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name, e.g. AI Research" />
-            <Input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="What should count as relevant?" />
-          </div>
-          <Button size="sm" onClick={submit} disabled={!name.trim() || !prompt.trim()}>
-            <Plus size={14} /> Add category
-          </Button>
-        </div>
-
-        <div className="space-y-2 border-t border-border pt-3">
-          <p className="text-xs font-medium text-muted">Add a blog or website</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Input value={blogUrl} onChange={(e) => setBlogUrl(e.target.value)} placeholder="https://..." />
-            <Input value={blogLabel} onChange={(e) => setBlogLabel(e.target.value)} placeholder="Label (optional)" />
-          </div>
-          <Button size="sm" onClick={submitBlog} disabled={!blogUrl.trim() || addingBlog}>
-            <Globe size={14} /> {addingBlog ? 'Fetching preview…' : 'Add blog/website'}
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" onClick={() => setDialogOpen(true)}>
+          <Newspaper size={14} /> Manage categories
+        </Button>
       </CardContent>
+      <NewsCategoriesDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </Card>
-  );
-}
-
-function CategoryRow({
-  category,
-  onUpdate,
-  onRemove,
-}: {
-  category: NewsCategory;
-  onUpdate: (id: string, patch: Partial<NewsCategory>) => Promise<void>;
-  onRemove: (id: string) => Promise<void>;
-}) {
-  const [name, setName] = useState(category.name);
-  const [prompt, setPrompt] = useState(category.prompt ?? '');
-  const [location, setLocation] = useState(category.locationValue ?? '');
-  const [blogUrl, setBlogUrl] = useState(category.url ?? '');
-
-  return (
-    <div className="space-y-2 rounded-lg bg-background p-3">
-      <div className="flex items-center justify-between">
-        <Badge tone="library" className="capitalize">
-          {category.type.replace('-', ' ')}
-        </Badge>
-        {(category.type === 'custom' || category.type === 'blog') && (
-          <button onClick={() => onRemove(category.id)} className="text-muted hover:text-red-500">
-            <Trash2 size={13} />
-          </button>
-        )}
-      </div>
-
-      {category.type === 'custom' ? (
-        <>
-          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => onUpdate(category.id, { name })} />
-          <Textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onBlur={() => onUpdate(category.id, { prompt })}
-            placeholder="What should count as relevant?"
-          />
-        </>
-      ) : category.type === 'country' || category.type === 'city' ? (
-        <Input
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          onBlur={() => onUpdate(category.id, { locationValue: location })}
-          placeholder={category.type === 'country' ? 'e.g. Pakistan' : 'e.g. Karachi'}
-        />
-      ) : category.type === 'blog' ? (
-        <>
-          <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => onUpdate(category.id, { name })} placeholder="Label" />
-          <Input
-            value={blogUrl}
-            onChange={(e) => setBlogUrl(e.target.value)}
-            onBlur={() => onUpdate(category.id, { url: blogUrl })}
-            placeholder="https://..."
-          />
-        </>
-      ) : (
-        <p className="text-sm font-medium">{category.name}</p>
-      )}
-    </div>
   );
 }
 
