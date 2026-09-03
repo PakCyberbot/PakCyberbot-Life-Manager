@@ -53,8 +53,11 @@ export function MobileLibraryScreen() {
     getApi().settings.set(ONLY_THIS_HOST_SETTING_KEY, next ? 'on' : 'off');
   };
 
+  // A book synced to Drive but on another host still belongs in this list even with the filter
+  // on — it's not "on this device" yet, but it's one Download tap away from being so. Without
+  // this, the filter hid the exact books this feature exists for.
   const visibleBooks = useMemo(
-    () => (onlyThisHost ? books.filter((b) => !b.hostname || b.hostname === hostname) : books),
+    () => (onlyThisHost ? books.filter((b) => !b.hostname || b.hostname === hostname || !!b.driveFileId) : books),
     [books, onlyThisHost, hostname]
   );
 
@@ -234,8 +237,13 @@ function BooksList({
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-xs font-medium leading-snug">{b.title}</p>
                 {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
-                {!b.filePath && !b.driveFileId && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
-                {!b.filePath && b.driveFileId && (
+                {!openable && !b.driveFileId && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
+                {/* Gated on !openable, not !b.filePath — a book added on desktop already has a
+                    filePath/hostname (the desktop machine's), so !b.filePath alone never catches
+                    the actual common case: a desktop book with a driveFileId but on a different
+                    host, which is exactly !openable. This was the real bug behind books synced
+                    from desktop never showing a Download affordance on mobile at all. */}
+                {!openable && b.driveFileId && (
                   <button
                     onClick={() => onDownload(b)}
                     disabled={downloadingId === b.id}
