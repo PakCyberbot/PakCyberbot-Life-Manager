@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, FileWarning, Globe, Play, Plus, Trash2, Upload } from 'lucide-react';
+import { BookOpen, FileWarning, Globe, Pencil, Play, Plus, Trash2, Upload } from 'lucide-react';
 import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
 import type { Book, VideoKind, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
 import { Card, Badge, Button, Dialog, Field, Input, Switch, Textarea, EmptyState } from '@life-manager/ui';
@@ -24,6 +24,12 @@ export function MobileLibraryScreen() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [onlyThisHost, setOnlyThisHost] = useState(false);
+  // Off means pure browse/open; on reveals Delete (Books/Videos/Web links) and Edit (Videos/Web
+  // links) everywhere — same top-right toggle pattern as Goals' Quick Tasks and Savings, so a
+  // stray tap on a small phone screen can't misfire into deleting an entry.
+  const [editMode, setEditMode] = useState(false);
+  const [editingVideo, setEditingVideo] = useState<Video | null>(null);
+  const [editingWebLink, setEditingWebLink] = useState<WebLink | null>(null);
   const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
   useEffect(() => {
@@ -74,11 +80,18 @@ export function MobileLibraryScreen() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
-          <p className="mt-1 text-sm text-muted">Quick-save anything to explore later.</p>
+          <p className="mt-1 text-sm text-muted">
+            {editMode ? 'Editing' : 'Quick-save anything to explore later.'}
+          </p>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus size={15} />
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" variant={editMode ? 'primary' : 'outline'} onClick={() => setEditMode((v) => !v)}>
+            {editMode ? 'Done' : 'Edit'}
+          </Button>
+          <Button size="sm" onClick={() => setAddOpen(true)}>
+            <Plus size={15} />
+          </Button>
+        </div>
       </div>
 
       <div className="inline-flex w-full items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
@@ -105,15 +118,34 @@ export function MobileLibraryScreen() {
             </label>
           )}
           {openError && <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-500">{openError}</p>}
-          <BooksList books={visibleBooks} hostname={hostname} highlightId={highlightId} onOpen={openBookTapped} onRemove={removeBook} />
+          <BooksList
+            books={visibleBooks}
+            hostname={hostname}
+            highlightId={highlightId}
+            editMode={editMode}
+            onOpen={openBookTapped}
+            onRemove={removeBook}
+          />
         </>
       )}
-      {tab === 'videos' && <VideosList videos={videos} onEmptyAdd={() => setAddOpen(true)} highlightId={highlightId} />}
-      {tab === 'webLinks' && <WebLinksList webLinks={webLinks} onEmptyAdd={() => setAddOpen(true)} />}
+      {tab === 'videos' && (
+        <VideosList
+          videos={videos}
+          onEmptyAdd={() => setAddOpen(true)}
+          highlightId={highlightId}
+          editMode={editMode}
+          onEdit={setEditingVideo}
+        />
+      )}
+      {tab === 'webLinks' && (
+        <WebLinksList webLinks={webLinks} onEmptyAdd={() => setAddOpen(true)} editMode={editMode} onEdit={setEditingWebLink} />
+      )}
 
       {tab === 'books' && <NewBookDialog open={addOpen} onClose={() => setAddOpen(false)} />}
       {tab === 'videos' && <NewVideoDialog open={addOpen} onClose={() => setAddOpen(false)} />}
       {tab === 'webLinks' && <NewWebLinkDialog open={addOpen} onClose={() => setAddOpen(false)} />}
+      {editingVideo && <NewVideoDialog open onClose={() => setEditingVideo(null)} video={editingVideo} />}
+      {editingWebLink && <NewWebLinkDialog open onClose={() => setEditingWebLink(null)} webLink={editingWebLink} />}
     </div>
   );
 }
@@ -122,12 +154,14 @@ function BooksList({
   books,
   hostname,
   highlightId,
+  editMode,
   onOpen,
   onRemove,
 }: {
   books: Book[];
   hostname: string | null;
   highlightId: string | null;
+  editMode: boolean;
   onOpen: (book: Book) => void;
   onRemove: (id: string) => void;
 }) {
@@ -173,9 +207,11 @@ function BooksList({
                 {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
                 {!b.filePath && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
               </div>
-              <button onClick={() => onRemove(b.id)} className="shrink-0 text-muted active:text-red-500">
-                <Trash2 size={13} />
-              </button>
+              {editMode && (
+                <button onClick={() => onRemove(b.id)} className="shrink-0 text-muted active:text-red-500">
+                  <Trash2 size={13} />
+                </button>
+              )}
             </div>
           </Card>
         );
@@ -184,7 +220,19 @@ function BooksList({
   );
 }
 
-function VideosList({ videos, onEmptyAdd, highlightId }: { videos: Video[]; onEmptyAdd: () => void; highlightId: string | null }) {
+function VideosList({
+  videos,
+  onEmptyAdd,
+  highlightId,
+  editMode,
+  onEdit,
+}: {
+  videos: Video[];
+  onEmptyAdd: () => void;
+  highlightId: string | null;
+  editMode: boolean;
+  onEdit: (video: Video) => void;
+}) {
   const { removeVideo, updateVideo } = useVideosStore();
   if (videos.length === 0) {
     return (
@@ -229,16 +277,33 @@ function VideosList({ videos, onEmptyAdd, highlightId }: { videos: Video[]; onEm
               <option value="watched">Watched</option>
             </select>
           </div>
-          <button onClick={() => removeVideo(v.id)} className="shrink-0 self-start text-muted active:text-red-500">
-            <Trash2 size={14} />
-          </button>
+          {editMode && (
+            <div className="flex shrink-0 flex-col gap-2 self-start">
+              <button onClick={() => onEdit(v)} className="text-muted active:text-foreground">
+                <Pencil size={13} />
+              </button>
+              <button onClick={() => removeVideo(v.id)} className="text-muted active:text-red-500">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
         </Card>
       ))}
     </div>
   );
 }
 
-function WebLinksList({ webLinks, onEmptyAdd }: { webLinks: WebLink[]; onEmptyAdd: () => void }) {
+function WebLinksList({
+  webLinks,
+  onEmptyAdd,
+  editMode,
+  onEdit,
+}: {
+  webLinks: WebLink[];
+  onEmptyAdd: () => void;
+  editMode: boolean;
+  onEdit: (webLink: WebLink) => void;
+}) {
   const { removeWebLink, updateWebLink } = useWebLinksStore();
   if (webLinks.length === 0) {
     return (
@@ -278,9 +343,16 @@ function WebLinksList({ webLinks, onEmptyAdd }: { webLinks: WebLink[]; onEmptyAd
               <option value="explored">Explored</option>
             </select>
           </div>
-          <button onClick={() => removeWebLink(link.id)} className="shrink-0 self-start text-muted active:text-red-500">
-            <Trash2 size={14} />
-          </button>
+          {editMode && (
+            <div className="flex shrink-0 flex-col gap-2 self-start">
+              <button onClick={() => onEdit(link)} className="text-muted active:text-foreground">
+                <Pencil size={13} />
+              </button>
+              <button onClick={() => removeWebLink(link.id)} className="text-muted active:text-red-500">
+                <Trash2 size={14} />
+              </button>
+            </div>
+          )}
         </Card>
       ))}
     </div>
@@ -365,13 +437,24 @@ function NewBookDialog({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { addVideo } = useVideosStore();
+// Doubles as the edit dialog when a `video` prop is passed — same dual-purpose pattern desktop's
+// TaskDialog/SlotDialog use. Editing a video only has a title (URL/kind aren't re-fetchable-safe
+// to change in place — thumbnail/kind were set from the original URL), so the URL/playlist fields
+// only render in add mode.
+function NewVideoDialog({ open, onClose, video }: { open: boolean; onClose: () => void; video?: Video }) {
+  const { addVideo, updateVideo } = useVideosStore();
   const [url, setUrl] = useState('');
   const [kind, setKind] = useState<VideoKind>('video');
+  const [title, setTitle] = useState(video?.title ?? '');
   const [fetching, setFetching] = useState(false);
 
   const submit = async () => {
+    if (video) {
+      if (!title.trim()) return;
+      await updateVideo(video.id, { title: title.trim() });
+      onClose();
+      return;
+    }
     if (!url.trim()) return;
     setFetching(true);
     await addVideo({ url: url.trim(), kind });
@@ -381,21 +464,29 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="New video">
+    <Dialog open={open} onClose={onClose} title={video ? 'Edit video' : 'New video'}>
       <div className="space-y-3">
-        <Field label="YouTube URL (video or playlist)">
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." autoFocus />
-        </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={kind === 'playlist'} onChange={(e) => setKind(e.target.checked ? 'playlist' : 'video')} />
-          This is a playlist
-        </label>
+        {video ? (
+          <Field label="Title">
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+          </Field>
+        ) : (
+          <>
+            <Field label="YouTube URL (video or playlist)">
+              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." autoFocus />
+            </Field>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={kind === 'playlist'} onChange={(e) => setKind(e.target.checked ? 'playlist' : 'video')} />
+              This is a playlist
+            </label>
+          </>
+        )}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!url.trim() || fetching}>
-            {fetching ? 'Fetching…' : 'Add video'}
+          <Button onClick={submit} disabled={video ? !title.trim() : !url.trim() || fetching}>
+            {video ? 'Save' : fetching ? 'Fetching…' : 'Add video'}
           </Button>
         </div>
       </div>
@@ -403,14 +494,22 @@ function NewVideoDialog({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { addWebLink } = useWebLinksStore();
+// Doubles as the edit dialog when a `webLink` prop is passed. Editing keeps the URL fixed (re-
+// fetching a new preview in place isn't worth the complexity for this pass) and only lets title/
+// notes change.
+function NewWebLinkDialog({ open, onClose, webLink }: { open: boolean; onClose: () => void; webLink?: WebLink }) {
+  const { addWebLink, updateWebLink } = useWebLinksStore();
   const [url, setUrl] = useState('');
-  const [title, setTitle] = useState('');
-  const [notes, setNotes] = useState('');
+  const [title, setTitle] = useState(webLink?.title ?? '');
+  const [notes, setNotes] = useState(webLink?.notes ?? '');
   const [fetching, setFetching] = useState(false);
 
   const submit = async () => {
+    if (webLink) {
+      await updateWebLink(webLink.id, { title: title.trim() || webLink.title, notes: notes.trim() || null });
+      onClose();
+      return;
+    }
     if (!url.trim()) return;
     setFetching(true);
     await addWebLink(url.trim(), title.trim(), notes.trim() || null);
@@ -422,13 +521,15 @@ function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => voi
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="New web link">
+    <Dialog open={open} onClose={onClose} title={webLink ? 'Edit web link' : 'New web link'}>
       <div className="space-y-3">
-        <Field label="URL">
-          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoFocus />
-        </Field>
+        {!webLink && (
+          <Field label="URL">
+            <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." autoFocus />
+          </Field>
+        )}
         <Field label="Title (optional)">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus={!!webLink} />
         </Field>
         <Field label="Notes (optional)">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -437,8 +538,8 @@ function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!url.trim() || fetching}>
-            {fetching ? 'Fetching…' : 'Add web link'}
+          <Button onClick={submit} disabled={!webLink && (!url.trim() || fetching)}>
+            {webLink ? 'Save' : fetching ? 'Fetching…' : 'Add web link'}
           </Button>
         </div>
       </div>
