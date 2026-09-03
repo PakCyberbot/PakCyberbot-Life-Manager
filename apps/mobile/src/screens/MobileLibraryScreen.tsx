@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, FileWarning, Globe, Pencil, Play, Plus, Trash2, Upload } from 'lucide-react';
+import { BookOpen, Download, FileWarning, Globe, Pencil, Play, Plus, Trash2, Upload } from 'lucide-react';
 import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
 import type { Book, VideoKind, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
 import { Card, Badge, Button, Dialog, Field, Input, Switch, Textarea, EmptyState } from '@life-manager/ui';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import clsx from 'clsx';
 import { readFileAsBase64 } from '../api/mobileApi';
+import { MobilePdfReaderScreen } from './MobilePdfReaderScreen';
 
 type Tab = 'books' | 'videos' | 'webLinks';
 const TAB_LABEL: Record<Tab, string> = { books: 'Books', videos: 'Videos', webLinks: 'Web links' };
@@ -16,7 +17,8 @@ const ONLY_THIS_HOST_SETTING_KEY = 'libraryOnlyThisHostBooks';
 // which assumes a wide multi-column grid and native file-picker dialogs).
 export function MobileLibraryScreen() {
   const [tab, setTab] = useState<Tab>('books');
-  const { books, fetchBooks, loaded: booksLoaded, openBook, removeBook } = useBooksStore();
+  const { books, fetchBooks, loaded: booksLoaded, removeBook, updateBook } = useBooksStore();
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const { videos, fetchVideos, loaded: videosLoaded } = useVideosStore();
   const { webLinks, fetchWebLinks, loaded: webLinksLoaded } = useWebLinksStore();
   const [hostname, setHostname] = useState<string | null>(null);
@@ -30,6 +32,11 @@ export function MobileLibraryScreen() {
   const [editMode, setEditMode] = useState(false);
   const [editingVideo, setEditingVideo] = useState<Video | null>(null);
   const [editingWebLink, setEditingWebLink] = useState<WebLink | null>(null);
+  // A book with a local filePath opens in the new in-app reader (full-screen overlay, rendered
+  // below outside the normal tab flow) instead of handing off to the system viewer — the only
+  // way bookmark tracking can work on mobile at all, since there's no way to observe another
+  // app's reading position (same reasoning desktop's own in-app viewer was built for).
+  const [readingBook, setReadingBook] = useState<Book | null>(null);
   const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
   useEffect(() => {
@@ -51,10 +58,25 @@ export function MobileLibraryScreen() {
     [books, onlyThisHost, hostname]
   );
 
-  const openBookTapped = async (book: Book) => {
+  const openBookTapped = (book: Book) => {
     setOpenError(null);
-    const result = await openBook(book);
-    if (!result.ok) setOpenError(result.error ?? 'Could not open this file.');
+    setReadingBook(book);
+  };
+
+  const downloadBookTapped = async (book: Book) => {
+    if (!book.driveFileId) return;
+    setOpenError(null);
+    setDownloadingId(book.id);
+    try {
+      const result = await getApi().drive.downloadBookFile?.(book.driveFileId, book.id);
+      if (!result?.ok || !result.filePath) {
+        setOpenError(result?.error ?? 'Could not download this book.');
+        return;
+      }
+      await updateBook(book.id, { filePath: result.filePath, hostname: await getApi().system.hostname() });
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   // A Task's linked book/video (see GoalsView/TaskRow) sets this to jump straight to that item —
@@ -123,7 +145,9 @@ export function MobileLibraryScreen() {
             hostname={hostname}
             highlightId={highlightId}
             editMode={editMode}
+            downloadingId={downloadingId}
             onOpen={openBookTapped}
+            onDownload={downloadBookTapped}
             onRemove={removeBook}
           />
         </>
@@ -146,6 +170,7 @@ export function MobileLibraryScreen() {
       {tab === 'webLinks' && <NewWebLinkDialog open={addOpen} onClose={() => setAddOpen(false)} />}
       {editingVideo && <NewVideoDialog open onClose={() => setEditingVideo(null)} video={editingVideo} />}
       {editingWebLink && <NewWebLinkDialog open onClose={() => setEditingWebLink(null)} webLink={editingWebLink} />}
+      {readingBook && <MobilePdfReaderScreen book={readingBook} onClose={() => setReadingBook(null)} />}
     </div>
   );
 }
@@ -155,14 +180,18 @@ function BooksList({
   hostname,
   highlightId,
   editMode,
+  downloadingId,
   onOpen,
+  onDownload,
   onRemove,
 }: {
   books: Book[];
   hostname: string | null;
   highlightId: string | null;
   editMode: boolean;
+  downloadingId: string | null;
   onOpen: (book: Book) => void;
+  onDownload: (book: Book) => void;
   onRemove: (id: string) => void;
 }) {
   if (books.length === 0) {
@@ -205,7 +234,16 @@ function BooksList({
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-xs font-medium leading-snug">{b.title}</p>
                 {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
-                {!b.filePath && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
+                {!b.filePath && !b.driveFileId && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
+                {!b.filePath && b.driveFileId && (
+                  <button
+                    onClick={() => onDownload(b)}
+                    disabled={downloadingId === b.id}
+                    className="mt-1 flex items-center gap-1 text-[10px] font-medium text-accentLibrary disabled:opacity-50"
+                  >
+                    <Download size={11} /> {downloadingId === b.id ? 'Downloading…' : 'Download'}
+                  </button>
+                )}
               </div>
               {editMode && (
                 <button onClick={() => onRemove(b.id)} className="shrink-0 text-muted active:text-red-500">

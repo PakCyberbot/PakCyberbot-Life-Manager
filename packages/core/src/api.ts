@@ -146,6 +146,14 @@ export interface DriveApi {
    * renderer exists and never calls it from here (undefined on desktop's DriveApi); mobile has no
    * separate main process, so its App.tsx calls this directly at startup instead. */
   pullIfNewer?(): Promise<DrivePullIfNewerResult>;
+  /** Desktop only: per-book "Sync to mobile" — uploads a PDF's already-base64-encoded bytes into
+   * a Books/ subfolder inside the main Drive folder, returning the Drive file id to store on the
+   * book row. Undefined on mobile (nothing there ever uploads a book, only downloads one). */
+  uploadBookFile?(base64: string, filename: string): Promise<DriveSyncResult & { fileId?: string }>;
+  /** Mobile only: downloads a synced book's PDF bytes (by its Drive file id) into this device's
+   * own app-private storage, returning the local file path Library then treats like any other
+   * locally-added book. Undefined on desktop (books are already local there). */
+  downloadBookFile?(driveFileId: string, bookId: string): Promise<DriveSyncResult & { filePath?: string }>;
 }
 
 export interface BackupResult {

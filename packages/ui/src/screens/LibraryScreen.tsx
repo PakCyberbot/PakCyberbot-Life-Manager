@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, ExternalLink, FileWarning, FileX, FolderOpen, Globe, Play, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Cloud, CloudOff, ExternalLink, FileWarning, FileX, FolderOpen, Globe, Play, Plus, Trash2 } from 'lucide-react';
 import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
 import {
   formatDate,
@@ -167,8 +167,40 @@ function BooksGrid({
   highlightId: string | null;
   onEmptyAdd: () => void;
 }) {
-  const { removeBook, setBookmark, openBook, openBookExternally } = useBooksStore();
+  const { removeBook, setBookmark, updateBook, openBook, openBookExternally } = useBooksStore();
   const [openError, setOpenError] = useState<string | null>(null);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+
+  // Turning this on reads the PDF's bytes and uploads them to a Books/ subfolder in Drive (the
+  // same folder database sync uses), so mobile can later download its own copy — see
+  // MobileLibraryScreen.tsx's "Download" affordance. Turning it back off only stops tracking
+  // (driveFileId stays set); it never deletes the Drive copy, same "no surprise data loss"
+  // reasoning as every other sync toggle in this app.
+  const toggleSyncToMobile = async (book: Book) => {
+    if (!book.filePath) return;
+    if (book.syncedToDrive) {
+      await updateBook(book.id, { syncedToDrive: 0 });
+      return;
+    }
+    setSyncingId(book.id);
+    setOpenError(null);
+    try {
+      const base64 = await getApi().system.readFileAsBase64(book.filePath);
+      if (!base64) {
+        setOpenError('Could not read this book’s file to sync it.');
+        return;
+      }
+      const filename = `${book.id}.pdf`;
+      const result = await getApi().drive.uploadBookFile?.(base64, filename);
+      if (!result?.ok) {
+        setOpenError(result?.error ?? 'Could not sync this book to Drive.');
+        return;
+      }
+      await updateBook(book.id, { syncedToDrive: 1, driveFileId: result.fileId ?? book.driveFileId ?? null });
+    } finally {
+      setSyncingId(null);
+    }
+  };
 
   useEffect(() => {
     if (!highlightId) return;
@@ -272,6 +304,16 @@ function BooksGrid({
                       className="text-muted hover:text-foreground"
                     >
                       <ExternalLink size={13} />
+                    </button>
+                  )}
+                  {b.filePath && (
+                    <button
+                      onClick={() => toggleSyncToMobile(b)}
+                      disabled={syncingId === b.id}
+                      title={b.syncedToDrive ? 'Synced to mobile — click to stop tracking (keeps the Drive copy)' : 'Sync to mobile via Drive'}
+                      className={clsx('disabled:opacity-50', b.syncedToDrive ? 'text-accentLibrary' : 'text-muted hover:text-foreground')}
+                    >
+                      {b.syncedToDrive ? <Cloud size={13} /> : <CloudOff size={13} />}
                     </button>
                   )}
                   <button onClick={() => removeBook(b.id)} title="Delete" className="text-muted hover:text-red-500">

@@ -723,6 +723,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('drive:connect', () => driveSync.connect());
   ipcMain.handle('drive:disconnect', () => driveSync.disconnect());
   ipcMain.handle('drive:push', () => driveSync.push(dbPath));
+  ipcMain.handle('drive:uploadBookFile', (_e, base64: string, filename: string) => driveSync.uploadBookFile(base64, filename));
   ipcMain.handle('drive:pull', async () => {
     const result = await driveSync.pull(dbPath);
     if (result.ok) {

@@ -120,6 +120,8 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
   await ensureColumn('wishlistItems', 'purchaseEntryId', 'TEXT');
   await ensureColumn('goals', 'imageUrl', 'TEXT');
   await ensureColumn('tasks', 'linkedMilestoneId', 'TEXT');
+  await ensureColumn('books', 'syncedToDrive', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('books', 'driveFileId', 'TEXT');
 
   async function tableIsEmpty(table: string): Promise<boolean> {
     const result = await db.query(`SELECT COUNT(*) as count FROM ${table}`);

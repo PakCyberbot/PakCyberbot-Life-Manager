@@ -17,8 +17,13 @@ import type { ElectronDataStore } from '@life-manager/db/src/electronDriver';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email';
 const DRIVE_FOLDER_NAME = 'PakCyberbot Life Manager';
+const BOOKS_FOLDER_NAME = 'Books';
 const DB_FILE_NAME = 'life-manager.sqlite';
 const OAUTH_TIMEOUT_MS = 120_000;
+
+export interface DriveUploadBookResult extends DriveSyncResult {
+  fileId?: string;
+}
 
 export interface DriveSyncResult {
   ok: boolean;
@@ -231,6 +236,27 @@ export function createDriveSync(store: ElectronDataStore) {
     return createData.id;
   }
 
+  /** Same find-or-create shape as findOrCreateFolder above, generalized to nest one folder inside
+   * another — used to get/create the "Books" subfolder inside the main Drive folder. */
+  async function findOrCreateSubfolder(accessToken: string, name: string, parentId: string): Promise<string> {
+    const q = encodeURIComponent(
+      `name='${name}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+    );
+    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const listData = (await listRes.json()) as { files?: { id: string }[] };
+    if (listData.files?.length) return listData.files[0].id;
+
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+    });
+    const createData = (await createRes.json()) as { id: string };
+    return createData.id;
+  }
+
   async function findFile(accessToken: string, folderId: string): Promise<{ id: string; modifiedTime: string } | null> {
     const q = encodeURIComponent(`name='${DB_FILE_NAME}' and '${folderId}' in parents and trashed=false`);
     const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
@@ -276,6 +302,56 @@ export function createDriveSync(store: ElectronDataStore) {
       store.setSetting('lastPushedAt', new Date().toISOString());
       if (uploaded.modifiedTime) store.setSetting('driveFileModifiedTime', uploaded.modifiedTime);
       return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  /** Per-book "Sync to mobile" — uploads a PDF's bytes (already read/base64-encoded by the
+   * caller, same as every other data: URI in this app) into a "Books" subfolder inside the main
+   * Drive folder, distinct from the database's own uploadBookFile-free push above. Re-uploads
+   * overwrite the existing file (found by name) rather than creating a duplicate, so toggling
+   * "Sync to mobile" off then on again — or a real re-sync — replaces content in place. */
+  async function uploadBookFile(base64: string, filename: string): Promise<DriveUploadBookResult> {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return { ok: false, error: 'Not connected to Google Drive — connect in Settings first.' };
+
+    try {
+      const parentId = await findOrCreateFolder(accessToken);
+      const booksFolderId = await findOrCreateSubfolder(accessToken, BOOKS_FOLDER_NAME, parentId);
+
+      const q = encodeURIComponent(`name='${filename}' and '${booksFolderId}' in parents and trashed=false`);
+      const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id)`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const listData = (await listRes.json()) as { files?: { id: string }[] };
+      const existingId = listData.files?.[0]?.id ?? null;
+
+      const fileBytes = Buffer.from(base64, 'base64');
+      const boundary = 'lifemanagerbooksync';
+      const metadata = existingId ? {} : { name: filename, parents: [booksFolderId] };
+      const multipartHead =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+        `--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`;
+      const multipartTail = `\r\n--${boundary}--`;
+      const body = Buffer.concat([Buffer.from(multipartHead, 'utf-8'), fileBytes, Buffer.from(multipartTail, 'utf-8')]);
+
+      const url = existingId
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=multipart&fields=id`
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id';
+
+      const res = await fetch(url, {
+        method: existingId ? 'PATCH' : 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+        body,
+      });
+      if (!res.ok) {
+        const errBody = await res.text();
+        return { ok: false, error: `Drive upload failed (${res.status}): ${errBody.slice(0, 200)}` };
+      }
+      const uploaded = (await res.json()) as { id?: string };
+      if (!uploaded.id) return { ok: false, error: 'Drive did not return a file id.' };
+      return { ok: true, fileId: uploaded.id };
     } catch (err) {
       return { ok: false, error: String(err) };
     }
@@ -332,5 +408,5 @@ export function createDriveSync(store: ElectronDataStore) {
     }
   }
 
-  return { connect, disconnect, push, pull, pullIfNewer, status };
+  return { connect, disconnect, push, pull, pullIfNewer, uploadBookFile, status };
 }

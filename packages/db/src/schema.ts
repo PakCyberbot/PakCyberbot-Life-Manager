@@ -162,6 +162,8 @@ export const SCHEMA_STATEMENTS: string[] = [
     status TEXT NOT NULL DEFAULT 'to-read',
     notes TEXT,
     category TEXT,
+    syncedToDrive INTEGER NOT NULL DEFAULT 0,
+    driveFileId TEXT,
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

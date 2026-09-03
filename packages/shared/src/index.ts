@@ -158,6 +158,13 @@ export interface Book extends BaseRow {
   notes?: string | null;
   /** Set automatically to a goal's title when a Task links this book — see structure.md's Goals/Tasks section. */
   category?: string | null;
+  /** 1 once the desktop user has turned on "Sync to mobile" for this book — the PDF's bytes were
+   * uploaded to a Books/ subfolder in the same Drive folder the database syncs through. Turning it
+   * back off only stops tracking (leaves driveFileId set); it never deletes the Drive copy. */
+  syncedToDrive?: number;
+  /** The Drive file id of this book's uploaded PDF, once synced — lets mobile download its own
+   * local copy via Drive's alt=media endpoint. Null until the first successful sync. */
+  driveFileId?: string | null;
 }
 
 export interface Quote extends BaseRow {

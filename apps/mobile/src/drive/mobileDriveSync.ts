@@ -21,8 +21,9 @@
 // purpose-built plugin.
 
 import { Browser } from '@capacitor/browser';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { FileTransfer } from '@capacitor/file-transfer';
-import type { DriveApi, DriveConnectResult, DrivePullIfNewerResult, DriveStatus } from '@life-manager/core';
+import type { DriveApi, DriveConnectResult, DrivePullIfNewerResult, DriveStatus, DriveSyncResult } from '@life-manager/core';
 import type { MobileDataStore } from '@life-manager/db/src/capacitorDriver';
 import { LoopbackAuth } from '../native/loopbackAuth';
 
@@ -341,5 +342,30 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
     };
   }
 
-  return { connect, disconnect, push, pull, pullIfNewer, onAutoSyncFailed, status };
+  /** Downloads a book PDF desktop synced to Drive's Books/ subfolder into this device's own
+   * app-private storage — same Directory.Data convention MobileLibraryScreen's NewBookDialog
+   * already uses for a locally-picked PDF, so the result behaves identically to a normally-added
+   * book from here on (Library just sets its filePath/hostname to this device's own). */
+  async function downloadBookFile(driveFileId: string, bookId: string): Promise<DriveSyncResult & { filePath?: string }> {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return { ok: false, error: 'Not connected to Google Drive — connect in Settings first.' };
+
+    try {
+      const filename = `book-drive-${bookId}.pdf`;
+      const { uri } = await Filesystem.getUri({ path: filename, directory: Directory.Data });
+      const filePath = uri.startsWith('file://') ? uri.slice('file://'.length) : uri;
+
+      const result = await FileTransfer.downloadFile({
+        url: `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+        path: filePath,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!result.path) return { ok: false, error: 'Download did not complete.' };
+      return { ok: true, filePath: result.path };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  return { connect, disconnect, push, pull, pullIfNewer, onAutoSyncFailed, downloadBookFile, status };
 }

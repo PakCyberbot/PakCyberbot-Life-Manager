@@ -46,6 +46,7 @@ const api: LifeManagerApi = {
     disconnect: () => ipcRenderer.invoke('drive:disconnect'),
     push: () => ipcRenderer.invoke('drive:push'),
     pull: () => ipcRenderer.invoke('drive:pull'),
+    uploadBookFile: (base64, filename) => ipcRenderer.invoke('drive:uploadBookFile', base64, filename),
     onAutoSyncFailed: (callback) => {
       const listener = (_event: Electron.IpcRendererEvent, message: string) => callback(message);
       ipcRenderer.on('drive:autoSyncFailed', listener);
