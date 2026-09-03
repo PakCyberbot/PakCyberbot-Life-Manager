@@ -31,6 +31,7 @@ import {
   type Goal,
   type GoalStatus,
   type GoalType,
+  type Milestone,
   type Task,
   type TaskLinkType,
   type TaskPriority,
@@ -417,6 +418,12 @@ function GoalDetailDialog({
   const milestones = byGoalId[goal.id] ?? [];
   // Milestone-linked tasks render nested under their milestone (below), not in this flat list.
   const goalLevelTasks = tasks.filter((t) => t.linkedGoalId === goal.id && !t.linkedMilestoneId);
+  // Default to View — a visually plain read-only glance (image, title, description, status,
+  // category, target date, progress bar, milestones + their tasks, goal-level tasks), no
+  // edit/delete affordances shown. Edit is exactly the dialog as it was before this toggle
+  // existed — same state below, just a different render branch, so switching between them never
+  // loses anything mid-edit.
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
   const [newMilestone, setNewMilestone] = useState('');
   // Also doubles as the milestone quick-add: { milestoneId: null } for goal-level "Add task",
   // { milestoneId: m.id } for a milestone's own "Add task" — both open the same full TaskDialog
@@ -474,6 +481,24 @@ function GoalDetailDialog({
   return (
     <Dialog open onClose={onClose} title={goal.title} className="max-w-xl">
       <div className="space-y-4">
+        <div className="flex items-center justify-end">
+          <Button size="sm" variant={mode === 'edit' ? 'primary' : 'outline'} onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}>
+            {mode === 'edit' ? (
+              <>
+                <CheckSquare size={13} /> Done editing
+              </>
+            ) : (
+              <>
+                <Pencil size={13} /> Edit
+              </>
+            )}
+          </Button>
+        </div>
+
+        {mode === 'view' ? (
+          <GoalViewContent goal={goal} milestones={milestones} tasks={tasks} goalLevelTasks={goalLevelTasks} hostname={hostname} onNavigate={onNavigate} toggleMilestone={toggleMilestone} setStatus={setStatus} />
+        ) : (
+          <>
         <div className="space-y-2">
           {goal.imageUrl ? (
             <img src={goal.imageUrl} alt="" className="h-32 w-full rounded-lg object-cover" />
@@ -704,11 +729,17 @@ function GoalDetailDialog({
             </div>
           )}
         </div>
+          </>
+        )}
 
         <div className="flex justify-between border-t border-border pt-3">
-          <Button variant="danger" size="sm" onClick={() => onDelete(goal.id)}>
-            <Trash2 size={14} /> Delete goal
-          </Button>
+          {mode === 'edit' ? (
+            <Button variant="danger" size="sm" onClick={() => onDelete(goal.id)}>
+              <Trash2 size={14} /> Delete goal
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
           </Button>
@@ -747,6 +778,126 @@ function GoalDetailDialog({
         }}
       />
     </Dialog>
+  );
+}
+
+/** GoalDetailDialog's read-only "View" mode content — a visually plain glance, no edit/delete
+ * affordances anywhere. Milestone/task checkboxes stay live (checking one off isn't a misclick
+ * risk the way delete is, matching how mobile's read-only Goal detail already treats them), and
+ * task titles stay click-to-open via the shared TaskTitle helper — everything else here is plain
+ * text or a progress bar, not an input. */
+function GoalViewContent({
+  goal,
+  milestones,
+  tasks,
+  goalLevelTasks,
+  hostname,
+  onNavigate,
+  toggleMilestone,
+  setStatus,
+}: {
+  goal: Goal;
+  milestones: Milestone[];
+  tasks: Task[];
+  goalLevelTasks: Task[];
+  hostname: string | null;
+  onNavigate: (s: ScreenId) => void;
+  toggleMilestone: (goalId: string, milestoneId: string) => Promise<void> | void;
+  setStatus: (taskId: string, status: Task['status']) => Promise<void> | void;
+}) {
+  return (
+    <div className="space-y-4">
+      {goal.imageUrl && <img src={goal.imageUrl} alt="" className="h-40 w-full rounded-lg object-cover" />}
+      <div>
+        <h3 className="text-lg font-semibold leading-snug">{goal.title}</h3>
+        {goal.category && <p className="mt-0.5 text-xs text-muted">{goal.category}</p>}
+      </div>
+      {goal.description && <p className="whitespace-pre-wrap text-sm text-muted">{goal.description}</p>}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={STATUS_TONE[goal.status]}>{goal.status}</Badge>
+        <Badge tone="default">{goal.type}</Badge>
+        {goal.targetDate && <span className="text-xs text-muted">Target: {formatDate(goal.targetDate)}</span>}
+      </div>
+      <div>
+        <div className="mb-1 flex items-center justify-between text-xs text-muted">
+          <span>Progress</span>
+          <span>{goal.progressPct}%</span>
+        </div>
+        <ProgressBar value={goal.progressPct} toneClassName="bg-accentGoals" />
+      </div>
+
+      {milestones.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-medium text-muted">Milestones</p>
+          <div className="space-y-1.5">
+            {milestones.map((m) => {
+              const subtasks = tasks.filter((t) => t.linkedGoalId === goal.id && t.linkedMilestoneId === m.id);
+              return (
+                <div key={m.id} className="rounded-lg bg-background px-3 py-2">
+                  <label className="flex items-center gap-2.5 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!m.completed}
+                      onChange={() => toggleMilestone(goal.id, m.id)}
+                      className="h-4 w-4 shrink-0 rounded border-border accent-current text-accentGoals"
+                    />
+                    <span className={clsx('flex-1', m.completed && 'text-muted line-through')}>{m.title}</span>
+                  </label>
+                  {subtasks.length > 0 && (
+                    <div className="ml-6 mt-1.5 space-y-1.5 border-l border-border pl-3">
+                      {subtasks.map((t) => (
+                        <div key={t.id} className="flex items-center gap-2.5 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={t.status === 'done'}
+                            onChange={() => setStatus(t.id, t.status === 'done' ? 'todo' : 'done')}
+                            className="h-3.5 w-3.5 shrink-0 rounded border-border accent-current text-accentGoals"
+                          />
+                          <TaskTitle
+                            task={t}
+                            hostname={hostname}
+                            onNavigate={onNavigate}
+                            className={clsx('min-w-0 flex-1 truncate', t.status === 'done' && 'text-muted line-through')}
+                          />
+                          <TaskLinkIcon task={t} hostname={hostname} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {goalLevelTasks.length > 0 && (
+        <div>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted">
+            <CheckSquare size={13} /> Tasks
+          </p>
+          <div className="space-y-1.5">
+            {goalLevelTasks.map((t) => (
+              <div key={t.id} className="flex items-center gap-2.5 rounded-lg bg-background px-3 py-2.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={t.status === 'done'}
+                  onChange={() => setStatus(t.id, t.status === 'done' ? 'todo' : 'done')}
+                  className="h-4 w-4 shrink-0 rounded border-border accent-current text-accentGoals"
+                />
+                <TaskTitle
+                  task={t}
+                  hostname={hostname}
+                  onNavigate={onNavigate}
+                  className={clsx('min-w-0 flex-1 truncate', t.status === 'done' && 'text-muted line-through')}
+                />
+                <TaskLinkIcon task={t} hostname={hostname} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
