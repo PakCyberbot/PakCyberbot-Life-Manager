@@ -46,6 +46,11 @@ const api: LifeManagerApi = {
     disconnect: () => ipcRenderer.invoke('drive:disconnect'),
     push: () => ipcRenderer.invoke('drive:push'),
     pull: () => ipcRenderer.invoke('drive:pull'),
+    onAutoSyncFailed: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, message: string) => callback(message);
+      ipcRenderer.on('drive:autoSyncFailed', listener);
+      return () => ipcRenderer.removeListener('drive:autoSyncFailed', listener);
+    },
   },
   backup: {
     exportDatabase: () => ipcRenderer.invoke('db:export'),

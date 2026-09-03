@@ -58,7 +58,7 @@ async function getHostname(): Promise<string> {
   return cachedHostname;
 }
 
-function buildDb(store: MobileDataStore): DbApi {
+function buildDb(store: MobileDataStore, scheduleAutoPush: () => void): DbApi {
   return {
     // Each generic parameter has to be forwarded explicitly (store.list<T>(...),
     // not store.list(...)) — without it, TS can't infer T from the arguments
@@ -66,17 +66,37 @@ function buildDb(store: MobileDataStore): DbApi {
     // fails to satisfy DbApi's own T at the outer call site.
     list: <T,>(table: string, where?: Record<string, unknown>) => store.list<T>(table, where),
     get: <T,>(table: string, id: string) => store.get<T>(table, id),
-    create: <T,>(table: string, row: T) => store.create(table, row as Record<string, unknown>) as Promise<T>,
-    update: (table, id, patch) => store.update(table, id, patch),
-    remove: (table, id) => store.remove(table, id),
-    hardRemove: (table, id) => store.hardRemove(table, id),
+    create: async <T,>(table: string, row: T) => {
+      const result = (await store.create(table, row as Record<string, unknown>)) as T;
+      scheduleAutoPush();
+      return result;
+    },
+    update: async (table, id, patch) => {
+      const result = await store.update(table, id, patch);
+      scheduleAutoPush();
+      return result;
+    },
+    remove: async (table, id) => {
+      const result = await store.remove(table, id);
+      scheduleAutoPush();
+      return result;
+    },
+    hardRemove: async (table, id) => {
+      const result = await store.hardRemove(table, id);
+      scheduleAutoPush();
+      return result;
+    },
   };
 }
 
-function buildSettings(store: MobileDataStore): SettingsApi {
+function buildSettings(store: MobileDataStore, scheduleAutoPush: () => void): SettingsApi {
   return {
     get: (key) => store.getSetting(key),
-    set: (key, value) => store.setSetting(key, value),
+    set: async (key, value) => {
+      const result = await store.setSetting(key, value);
+      scheduleAutoPush();
+      return result;
+    },
   };
 }
 
@@ -428,13 +448,37 @@ const ai: AiApi = {
 };
 
 export function buildMobileApi(store: MobileDataStore): LifeManagerApi {
+  const driveSync = createMobileDriveSync(store);
+
+  // Auto Sync push-on-mutation, debounced the same 3s as desktop's main.ts — a burst of edits
+  // collapses into one push after the *last* mutation, not one per write. Every write funnels
+  // through buildDb/buildSettings below (the same generic-CRUD choke point desktop's IPC handlers
+  // use), so this one closure is the single hook point for all of them.
+  let autoPushTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleAutoPush = () => {
+    store.getSetting('autoSyncEnabled').then((enabled) => {
+      if (enabled !== 'on') return;
+      driveSync.status().then((status) => {
+        if (!status.connected) return;
+        if (autoPushTimer) clearTimeout(autoPushTimer);
+        autoPushTimer = setTimeout(() => {
+          autoPushTimer = null;
+          driveSync.push().catch(() => {
+            // Best-effort, same as desktop — the next mutation's auto-push, or a manual Push from
+            // Settings, retries naturally rather than surfacing its own toast here.
+          });
+        }, 3000);
+      });
+    });
+  };
+
   return {
-    db: buildDb(store),
-    settings: buildSettings(store),
+    db: buildDb(store, scheduleAutoPush),
+    settings: buildSettings(store, scheduleAutoPush),
     system: buildSystem(),
     dialog,
     media,
-    drive: createMobileDriveSync(store),
+    drive: driveSync,
     backup: buildBackup(store),
     news: buildNews(store),
     entertainment,

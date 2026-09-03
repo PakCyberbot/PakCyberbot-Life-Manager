@@ -25,6 +25,13 @@ export interface DriveSyncResult {
   error?: string;
 }
 
+export interface DrivePullIfNewerResult extends DriveSyncResult {
+  /** True when a real pull happened; false when the remote copy wasn't newer than what was last
+   * pushed/pulled and nothing was downloaded (or there's nothing in Drive yet) — the caller
+   * (auto-sync's pull-on-startup) uses this to decide whether it's safe to relaunch. */
+  skipped?: boolean;
+}
+
 export interface DriveConnectResult extends DriveSyncResult {
   email?: string;
 }
@@ -224,13 +231,13 @@ export function createDriveSync(store: ElectronDataStore) {
     return createData.id;
   }
 
-  async function findFile(accessToken: string, folderId: string): Promise<string | null> {
+  async function findFile(accessToken: string, folderId: string): Promise<{ id: string; modifiedTime: string } | null> {
     const q = encodeURIComponent(`name='${DB_FILE_NAME}' and '${folderId}' in parents and trashed=false`);
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`, {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const data = (await res.json()) as { files?: { id: string }[] };
-    return data.files?.[0]?.id ?? null;
+    const data = (await res.json()) as { files?: { id: string; modifiedTime: string }[] };
+    return data.files?.[0] ?? null;
   }
 
   async function push(dbFilePath: string): Promise<DriveSyncResult> {
@@ -239,23 +246,25 @@ export function createDriveSync(store: ElectronDataStore) {
 
     try {
       const folderId = await findOrCreateFolder(accessToken);
-      const existingId = await findFile(accessToken, folderId);
+      const existing = await findFile(accessToken, folderId);
       const fileBytes = fs.readFileSync(dbFilePath);
 
       const boundary = 'lifemanagersync';
-      const metadata = existingId ? {} : { name: DB_FILE_NAME, parents: [folderId] };
+      const metadata = existing ? {} : { name: DB_FILE_NAME, parents: [folderId] };
       const multipartHead =
         `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
         `--${boundary}\r\nContent-Type: application/octet-stream\r\n\r\n`;
       const multipartTail = `\r\n--${boundary}--`;
       const body = Buffer.concat([Buffer.from(multipartHead, 'utf-8'), fileBytes, Buffer.from(multipartTail, 'utf-8')]);
 
-      const url = existingId
-        ? `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=multipart`
-        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+      // fields=id,modifiedTime so the response itself carries the timestamp auto-sync's
+      // pullIfNewer compares against — no extra round trip needed to learn what we just pushed.
+      const url = existing
+        ? `https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=multipart&fields=id,modifiedTime`
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime';
 
       const res = await fetch(url, {
-        method: existingId ? 'PATCH' : 'POST',
+        method: existing ? 'PATCH' : 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
         body,
       });
@@ -263,7 +272,9 @@ export function createDriveSync(store: ElectronDataStore) {
         const errBody = await res.text();
         return { ok: false, error: `Drive upload failed (${res.status}): ${errBody.slice(0, 200)}` };
       }
+      const uploaded = (await res.json()) as { modifiedTime?: string };
       store.setSetting('lastPushedAt', new Date().toISOString());
+      if (uploaded.modifiedTime) store.setSetting('driveFileModifiedTime', uploaded.modifiedTime);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
@@ -276,10 +287,10 @@ export function createDriveSync(store: ElectronDataStore) {
 
     try {
       const folderId = await findOrCreateFolder(accessToken);
-      const fileId = await findFile(accessToken, folderId);
-      if (!fileId) return { ok: false, error: 'No backup found in Drive yet — push from a device first.' };
+      const file = await findFile(accessToken, folderId);
+      if (!file) return { ok: false, error: 'No backup found in Drive yet — push from a device first.' };
 
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!res.ok) return { ok: false, error: `Drive download failed (${res.status}).` };
@@ -287,11 +298,39 @@ export function createDriveSync(store: ElectronDataStore) {
       const buf = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(dbFilePath, buf);
       store.setSetting('lastPulledAt', new Date().toISOString());
+      store.setSetting('driveFileModifiedTime', file.modifiedTime);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
     }
   }
 
-  return { connect, disconnect, push, pull, status };
+  /** Auto-sync's pull-on-startup wrapper: looks up the remote file's modifiedTime and only does a
+   * real pull (which overwrites the local DB and relaunches the app — see pull() above/main.ts)
+   * when it's strictly newer than driveFileModifiedTime, the timestamp recorded after this
+   * device's own last successful push or pull. Without this check, calling pull() unconditionally
+   * on every startup would force-relaunch the app every single time it opens, even when nothing
+   * on Drive actually changed since last time. Never throws on a network failure — returns
+   * `{ ok: false, error }` so the caller can boot normally and show a transient failure toast
+   * instead of blocking startup. */
+  async function pullIfNewer(dbFilePath: string): Promise<DrivePullIfNewerResult> {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return { ok: false, error: 'Not connected to Google Drive.', skipped: true };
+
+    try {
+      const folderId = await findOrCreateFolder(accessToken);
+      const file = await findFile(accessToken, folderId);
+      if (!file) return { ok: true, skipped: true }; // nothing pushed yet anywhere — nothing to pull
+
+      const lastKnown = store.getSetting('driveFileModifiedTime');
+      const isNewer = !lastKnown || new Date(file.modifiedTime).getTime() > new Date(lastKnown).getTime();
+      if (!isNewer) return { ok: true, skipped: true };
+
+      return await pull(dbFilePath);
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  }
+
+  return { connect, disconnect, push, pull, pullIfNewer, status };
 }

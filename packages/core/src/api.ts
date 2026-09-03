@@ -109,6 +109,13 @@ export interface DriveSyncResult {
   error?: string;
 }
 
+export interface DrivePullIfNewerResult extends DriveSyncResult {
+  /** True when the remote copy wasn't newer than what was last pushed/pulled (or nothing has ever
+   * been pushed at all) and no download happened — vs. a real pull, which overwrites local data
+   * and reloads the app. */
+  skipped?: boolean;
+}
+
 export interface DriveConnectResult extends DriveSyncResult {
   email?: string;
 }
@@ -128,6 +135,17 @@ export interface DriveApi {
   push(): Promise<DriveSyncResult>;
   /** On success, the app relaunches itself to load the pulled data cleanly. */
   pull(): Promise<DriveSyncResult>;
+  /** Auto Sync only: fires when a pull attempted at startup (gated behind the autoSyncEnabled
+   * setting) fails to reach Drive — a transient 5s toast, not a blocking error, since the app
+   * still boots normally either way. Never fires for a manual Pull (that surfaces its own error
+   * inline in the Drive Sync card) or when auto-sync skipped the pull because nothing was newer. */
+  onAutoSyncFailed(callback: (message: string) => void): () => void;
+  /** Auto Sync's pull-on-startup check: downloads only if Drive's copy is strictly newer than
+   * what this device last pushed/pulled (never relaunches/reloads unconditionally on every
+   * startup the way a plain pull() would). Desktop runs this main-process-side before any
+   * renderer exists and never calls it from here (undefined on desktop's DriveApi); mobile has no
+   * separate main process, so its App.tsx calls this directly at startup instead. */
+  pullIfNewer?(): Promise<DrivePullIfNewerResult>;
 }
 
 export interface BackupResult {

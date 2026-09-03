@@ -22,7 +22,7 @@
 
 import { Browser } from '@capacitor/browser';
 import { FileTransfer } from '@capacitor/file-transfer';
-import type { DriveApi, DriveConnectResult, DriveStatus } from '@life-manager/core';
+import type { DriveApi, DriveConnectResult, DrivePullIfNewerResult, DriveStatus } from '@life-manager/core';
 import type { MobileDataStore } from '@life-manager/db/src/capacitorDriver';
 import { LoopbackAuth } from '../native/loopbackAuth';
 
@@ -32,6 +32,10 @@ const DB_FILE_NAME = 'life-manager.sqlite';
 const OAUTH_TIMEOUT_MS = 120_000;
 
 export function createMobileDriveSync(store: MobileDataStore): DriveApi {
+  // Auto Sync's failure toast has no separate main process to push an IPC event from here — App.tsx
+  // both triggers pullIfNewer() at startup AND subscribes via onAutoSyncFailed, same two-step shape
+  // as desktop's App.tsx, backed by this plain in-module listener list instead of ipcRenderer.
+  let autoSyncFailListeners: Array<(message: string) => void> = [];
   async function credentials() {
     return {
       clientId: await store.getSetting('googleClientId'),
@@ -197,13 +201,13 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
     return createData.id;
   }
 
-  async function findFile(accessToken: string, folderId: string): Promise<string | null> {
+  async function findFile(accessToken: string, folderId: string): Promise<{ id: string; modifiedTime: string } | null> {
     const q = encodeURIComponent(`name='${DB_FILE_NAME}' and '${folderId}' in parents and trashed=false`);
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`, {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const data = (await res.json()) as { files?: { id: string }[] };
-    return data.files?.[0]?.id ?? null;
+    const data = (await res.json()) as { files?: { id: string; modifiedTime: string }[] };
+    return data.files?.[0] ?? null;
   }
 
   async function push(): Promise<{ ok: boolean; error?: string }> {
@@ -215,7 +219,8 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       if (!dbFilePath) return { ok: false, error: 'Could not locate the database file on this device.' };
 
       const folderId = await findOrCreateFolder(accessToken);
-      let fileId = await findFile(accessToken, folderId);
+      const existing = await findFile(accessToken, folderId);
+      let fileId = existing?.id ?? null;
 
       // Drive's uploadType=media endpoint only sets file *content* — a brand
       // new file needs its metadata (name/parent) created first via a plain
@@ -231,8 +236,10 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
         fileId = created.id;
       }
 
+      // fields=id,modifiedTime so the response carries the timestamp pullIfNewer compares against
+      // — no extra round trip needed to learn what was just pushed, same as desktop's driveSync.ts.
       const result = await FileTransfer.uploadFile({
-        url: `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        url: `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media&fields=id,modifiedTime`,
         path: dbFilePath,
         method: 'PATCH',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/octet-stream' },
@@ -242,6 +249,13 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
         return { ok: false, error: `Drive upload failed (${result.responseCode}): ${(result.response ?? '').slice(0, 200)}` };
       }
       await store.setSetting('lastPushedAt', new Date().toISOString());
+      try {
+        const uploaded = JSON.parse(result.response ?? '{}') as { modifiedTime?: string };
+        if (uploaded.modifiedTime) await store.setSetting('driveFileModifiedTime', uploaded.modifiedTime);
+      } catch {
+        // Non-fatal — pullIfNewer just won't have a precise baseline until the next successful
+        // push/pull sets one; it degrades to treating any remote file as "maybe newer."
+      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
@@ -257,8 +271,8 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       if (!dbFilePath) return { ok: false, error: 'Could not locate the database file on this device.' };
 
       const folderId = await findOrCreateFolder(accessToken);
-      const fileId = await findFile(accessToken, folderId);
-      if (!fileId) return { ok: false, error: 'No backup found in Drive yet — push from a device first.' };
+      const file = await findFile(accessToken, folderId);
+      if (!file) return { ok: false, error: 'No backup found in Drive yet — push from a device first.' };
 
       // Written to the *current* (pre-pull) database, same relative ordering
       // as desktop's driveSync.ts — it's really only a courtesy, not something
@@ -270,13 +284,14 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       // pattern lives with, resolved there by exiting before anything can
       // flush stale state back over the pulled file).
       await store.setSetting('lastPulledAt', new Date().toISOString());
+      await store.setSetting('driveFileModifiedTime', file.modifiedTime);
 
       // Release the file lock before overwriting it — the same reasoning as
       // importRawDatabase's local-backup-import path.
       await store.close();
 
       await FileTransfer.downloadFile({
-        url: `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+        url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
         path: dbFilePath,
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -290,5 +305,41 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
     }
   }
 
-  return { connect, disconnect, push, pull, status };
+  /** Auto Sync's pull-on-startup check — called directly from App.tsx (mobile has no separate main
+   * process to run this ahead of the renderer the way desktop does). Only does a real pull() when
+   * Drive's copy is strictly newer than driveFileModifiedTime, the timestamp this device recorded
+   * after its own last successful push or pull — otherwise every app open would reload the page
+   * unconditionally. On a genuine failure (not just "nothing newer" or "not connected"), notifies
+   * onAutoSyncFailed subscribers so App.tsx can show its 5s toast. */
+  async function pullIfNewer(): Promise<DrivePullIfNewerResult> {
+    const accessToken = await getAccessToken();
+    if (!accessToken) return { ok: false, error: 'Not connected to Google Drive.', skipped: true };
+
+    try {
+      const folderId = await findOrCreateFolder(accessToken);
+      const file = await findFile(accessToken, folderId);
+      if (!file) return { ok: true, skipped: true }; // nothing pushed yet anywhere — nothing to pull
+
+      const lastKnown = await store.getSetting('driveFileModifiedTime');
+      const isNewer = !lastKnown || new Date(file.modifiedTime).getTime() > new Date(lastKnown).getTime();
+      if (!isNewer) return { ok: true, skipped: true };
+
+      const result = await pull();
+      if (!result.ok) autoSyncFailListeners.forEach((cb) => cb(result.error ?? 'Could not reach Google Drive.'));
+      return result;
+    } catch (err) {
+      const message = String(err);
+      autoSyncFailListeners.forEach((cb) => cb(message));
+      return { ok: false, error: message };
+    }
+  }
+
+  function onAutoSyncFailed(callback: (message: string) => void): () => void {
+    autoSyncFailListeners.push(callback);
+    return () => {
+      autoSyncFailListeners = autoSyncFailListeners.filter((cb) => cb !== callback);
+    };
+  }
+
+  return { connect, disconnect, push, pull, pullIfNewer, onAutoSyncFailed, status };
 }

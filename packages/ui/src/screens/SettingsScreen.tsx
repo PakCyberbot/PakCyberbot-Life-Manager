@@ -294,6 +294,7 @@ function DriveSyncCard() {
   const [status, setStatus] = useState<DriveStatus | null>(null);
   const [busy, setBusy] = useState<'connect' | 'push' | 'pull' | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [autoSyncEnabled, setAutoSyncEnabledState] = useState(false);
 
   const refreshStatus = async () => setStatus(await getApi().drive.status());
 
@@ -304,8 +305,16 @@ function DriveSyncCard() {
         setClientSecret(secret ?? '');
       }
     );
+    getApi()
+      .settings.get('autoSyncEnabled')
+      .then((v) => setAutoSyncEnabledState(v === 'on'));
     refreshStatus();
   }, []);
+
+  const toggleAutoSync = async (next: boolean) => {
+    setAutoSyncEnabledState(next);
+    await getApi().settings.set('autoSyncEnabled', next ? 'on' : 'off');
+  };
 
   const saveCredentials = async () => {
     await getApi().settings.set('googleClientId', clientId.trim());
@@ -408,6 +417,19 @@ function DriveSyncCard() {
               pulled: {status.lastPulledAt ? new Date(status.lastPulledAt).toLocaleString() : 'never'}
             </p>
           </div>
+        )}
+
+        {status?.connected && (
+          <label className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2.5">
+            <span className="text-sm">
+              <span className="font-medium">Auto Sync</span>
+              <span className="block text-xs text-muted">
+                Push automatically a few seconds after any change; pull automatically on startup if Drive has
+                something newer.
+              </span>
+            </span>
+            <Switch checked={autoSyncEnabled} onChange={toggleAutoSync} label="Auto Sync" />
+          </label>
         )}
 
         {message && <p className="text-sm text-muted">{message}</p>}

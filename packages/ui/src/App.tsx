@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useSettingsStore } from '@life-manager/core';
+import { getApi, useSettingsStore } from '@life-manager/core';
 import type { ToggleableSectionId } from '@life-manager/shared';
 import { ThemeProvider } from './theme/ThemeProvider';
+import { Toast } from './components/ui/Toast';
 import { AppShell } from './layout/AppShell';
 import type { ScreenId } from './navigation';
 import { DashboardScreen } from './screens/DashboardScreen';
@@ -21,6 +22,7 @@ import { SettingsScreen } from './screens/SettingsScreen';
 export function App() {
   const [screen, setScreen] = useState<ScreenId>('dashboard');
   const enabledSections = useSettingsStore((s) => s.enabledSections);
+  const [autoSyncFailedMessage, setAutoSyncFailedMessage] = useState<string | null>(null);
 
   // If the section currently being viewed gets turned off (e.g. from
   // Settings, in another tab of this same screen), bounce back to Dashboard
@@ -30,6 +32,14 @@ export function App() {
       setScreen('dashboard');
     }
   }, [screen, enabledSections]);
+
+  // Auto Sync: main.ts's app.whenReady() attempts a pull-on-startup entirely before this
+  // component ever mounts, so by the time this subscribes, main has already decided whether to
+  // relaunch (real pull), do nothing (skipped — nothing newer), or fail (network unreachable).
+  // Only the failure case reaches here, via a one-shot 'drive:autoSyncFailed' IPC event.
+  useEffect(() => {
+    return getApi().drive.onAutoSyncFailed(setAutoSyncFailedMessage);
+  }, []);
 
   return (
     <ThemeProvider>
@@ -48,6 +58,7 @@ export function App() {
         {screen === 'health' && <HealthScreen />}
         {screen === 'settings' && <SettingsScreen />}
       </AppShell>
+      <Toast message={autoSyncFailedMessage} onDismiss={() => setAutoSyncFailedMessage(null)} />
     </ThemeProvider>
   );
 }

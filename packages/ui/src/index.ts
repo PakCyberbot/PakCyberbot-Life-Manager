@@ -16,3 +16,4 @@ export { ProgressBar } from './components/ui/ProgressBar';
 export { Dialog } from './components/ui/Dialog';
 export { Label, Input, Textarea, Select, Field } from './components/ui/FormControls';
 export { Switch } from './components/ui/Switch';
+export { Toast } from './components/ui/Toast';

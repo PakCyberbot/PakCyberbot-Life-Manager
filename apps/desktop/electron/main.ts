@@ -447,17 +447,75 @@ app.whenReady().then(async () => {
   store = await createElectronDataStore(dbPath);
   const driveSync = createDriveSync(store);
 
+  // --- Auto Sync: pull-on-startup ---------------------------------------------
+  // Runs before any IPC handler or window exists — a real (non-skipped) pull
+  // overwrites dbPath on disk, and this instance's in-memory store (just opened,
+  // holding the pre-pull data) would otherwise autosave right back over it. The
+  // same app.exit() pattern the manual 'drive:pull' handler below already uses
+  // for exactly this reason: app.exit() skips 'before-quit', so store.close()
+  // never runs and can't re-overwrite the freshly-pulled file. pullIfNewer()
+  // itself guards against relaunching on every single startup — only a remote
+  // file strictly newer than what this device last pushed/pulled triggers it.
+  let autoSyncPullFailedMessage: string | null = null;
+  if (store.getSetting('autoSyncEnabled') === 'on' && driveSync.status().connected) {
+    const result = await driveSync.pullIfNewer(dbPath);
+    if (result.ok && !result.skipped) {
+      app.relaunch();
+      app.exit(0);
+      return;
+    }
+    if (!result.ok) autoSyncPullFailedMessage = result.error ?? 'Could not reach Google Drive.';
+  }
+
+  // --- Auto Sync: push-on-mutation ---------------------------------------------
+  // Debounced so a burst of edits (or a chain of onBlur commits) collapses into
+  // one push a few seconds after the *last* mutation, not one push per write.
+  // Fire-and-forget from the caller's perspective — never blocks the IPC
+  // response that triggered it.
+  let autoPushTimer: NodeJS.Timeout | null = null;
+  function scheduleAutoPush() {
+    if (store!.getSetting('autoSyncEnabled') !== 'on') return;
+    if (!driveSync.status().connected) return;
+    if (autoPushTimer) clearTimeout(autoPushTimer);
+    autoPushTimer = setTimeout(() => {
+      autoPushTimer = null;
+      driveSync.push(dbPath).catch(() => {
+        // Best-effort — a failed background push isn't surfaced with its own
+        // toast (unlike the startup pull); the next successful mutation's
+        // auto-push, or a manual Push from Settings, will retry naturally.
+      });
+    }, 3000);
+  }
+
   ipcMain.handle('db:list', (_e, table: string, where?: Record<string, unknown>) => store!.list(table, where));
   ipcMain.handle('db:get', (_e, table: string, id: string) => store!.get(table, id));
-  ipcMain.handle('db:create', (_e, table: string, row: Record<string, unknown>) => store!.create(table, row));
-  ipcMain.handle('db:update', (_e, table: string, id: string, patch: Record<string, unknown>) =>
-    store!.update(table, id, patch)
-  );
-  ipcMain.handle('db:remove', (_e, table: string, id: string) => store!.remove(table, id));
-  ipcMain.handle('db:hardRemove', (_e, table: string, id: string) => store!.hardRemove(table, id));
+  ipcMain.handle('db:create', async (_e, table: string, row: Record<string, unknown>) => {
+    const result = await store!.create(table, row);
+    scheduleAutoPush();
+    return result;
+  });
+  ipcMain.handle('db:update', async (_e, table: string, id: string, patch: Record<string, unknown>) => {
+    const result = await store!.update(table, id, patch);
+    scheduleAutoPush();
+    return result;
+  });
+  ipcMain.handle('db:remove', async (_e, table: string, id: string) => {
+    const result = await store!.remove(table, id);
+    scheduleAutoPush();
+    return result;
+  });
+  ipcMain.handle('db:hardRemove', async (_e, table: string, id: string) => {
+    const result = await store!.hardRemove(table, id);
+    scheduleAutoPush();
+    return result;
+  });
 
   ipcMain.handle('settings:get', (_e, key: string) => store!.getSetting(key));
-  ipcMain.handle('settings:set', (_e, key: string, value: string) => store!.setSetting(key, value));
+  ipcMain.handle('settings:set', (_e, key: string, value: string) => {
+    const result = store!.setSetting(key, value);
+    scheduleAutoPush();
+    return result;
+  });
 
   ipcMain.handle('system:hostname', () => os.hostname());
   ipcMain.handle('system:readFileAsBase64', (_e, filePath: string) => {
@@ -732,6 +790,17 @@ app.whenReady().then(async () => {
   });
 
   mainWindow = await createWindow();
+
+  if (autoSyncPullFailedMessage) {
+    // Delayed past 'did-finish-load' — the renderer's App.tsx only starts listening for this
+    // event from inside a useEffect after it mounts, a moment after the page itself finishes
+    // loading; sending any earlier risks the main process firing before anything is subscribed
+    // (Electron IPC doesn't queue events for a listener that isn't registered yet).
+    const message = autoSyncPullFailedMessage;
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => mainWindow?.webContents.send('drive:autoSyncFailed', message), 300);
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
