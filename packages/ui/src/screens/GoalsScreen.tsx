@@ -826,14 +826,20 @@ function TaskDialog({
     setSelectedVideoId('');
   };
 
+  // A title is only truly optional when linked to a Library book/video — there's a real name to
+  // fall back on there ("Book - <title>"/"YouTube - <title>"). Every other link mode (or no link
+  // at all) still requires one, same as before.
+  const canSubmitWithoutTitle = (linkMode === 'book' && !!selectedBookId) || (linkMode === 'video' && !!selectedVideoId);
+
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() && !canSubmitWithoutTitle) return;
     setSubmitting(true);
 
     let linkType: TaskLinkType | null = null;
     let linkPath: string | null = null;
     let linkHostname: string | null = null;
     let linkTargetId: string | null = null;
+    let defaultTitle: string | null = null;
 
     if (linkMode === 'path' && pickedPath) {
       linkType = pickedPath.isFolder ? 'folder' : 'file';
@@ -845,6 +851,8 @@ function TaskDialog({
     } else if (linkMode === 'book' && selectedBookId) {
       linkType = 'book';
       linkTargetId = selectedBookId;
+      const book = books.find((b) => b.id === selectedBookId);
+      if (book) defaultTitle = `Book - ${book.title}`;
       // Tag the book with this goal's title so Library shows which goal it belongs to — only
       // meaningful when there's a goal at all (a quick task's book/video link isn't tagged until
       // the task itself is later assigned into a goal).
@@ -852,11 +860,15 @@ function TaskDialog({
     } else if (linkMode === 'video' && selectedVideoId) {
       linkType = 'video';
       linkTargetId = selectedVideoId;
+      const video = videos.find((v) => v.id === selectedVideoId);
+      // Library's video links are always YouTube (addVideo always resolves via
+      // media.fetchYouTubeThumbnail) — no need to sniff the URL's host.
+      if (video) defaultTitle = `YouTube - ${video.title}`;
       if (goal) await updateVideo(selectedVideoId, { category: goal.title });
     }
 
     const payload = {
-      title: title.trim(),
+      title: title.trim() || defaultTitle || 'Untitled task',
       notes: notes.trim() || null,
       dueDate: dueDate || null,
       priority,
@@ -887,8 +899,13 @@ function TaskDialog({
   return (
     <Dialog open={open} onClose={onClose} title={dialogTitle}>
       <div className="space-y-3">
-        <Field label="Title">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Draft the outline" autoFocus />
+        <Field label={canSubmitWithoutTitle ? 'Title (optional)' : 'Title'}>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={canSubmitWithoutTitle ? 'Defaults to the linked item’s name if left blank' : 'e.g. Draft the outline'}
+            autoFocus
+          />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Due date (optional)">
@@ -970,7 +987,7 @@ function TaskDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!title.trim() || submitting}>
+          <Button onClick={submit} disabled={(!title.trim() && !canSubmitWithoutTitle) || submitting}>
             {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add task'}
           </Button>
         </div>

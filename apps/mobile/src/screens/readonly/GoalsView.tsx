@@ -256,13 +256,18 @@ function QuickTaskDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkMode, books, videos]);
 
+  // Same "optional title when linked to a Library book/video" relaxation as desktop's TaskDialog —
+  // there's a real name to fall back on there ("Book - <title>"/"YouTube - <title>").
+  const canSubmitWithoutTitle = (linkMode === 'book' && !!selectedBookId) || (linkMode === 'video' && !!selectedVideoId);
+
   const submit = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() && !canSubmitWithoutTitle) return;
     setSubmitting(true);
 
     let linkType: TaskLinkType | null = null;
     let linkPath: string | null = null;
     let linkTargetId: string | null = null;
+    let defaultTitle: string | null = null;
 
     if (linkMode === 'url' && url.trim()) {
       linkType = 'url';
@@ -270,12 +275,24 @@ function QuickTaskDialog({
     } else if (linkMode === 'book' && selectedBookId) {
       linkType = 'book';
       linkTargetId = selectedBookId;
+      const book = books.find((b) => b.id === selectedBookId);
+      if (book) defaultTitle = `Book - ${book.title}`;
     } else if (linkMode === 'video' && selectedVideoId) {
       linkType = 'video';
       linkTargetId = selectedVideoId;
+      const video = videos.find((v) => v.id === selectedVideoId);
+      if (video) defaultTitle = `YouTube - ${video.title}`;
     }
 
-    const payload = { title: title.trim(), notes: notes.trim() || null, dueDate: dueDate || null, priority, linkType, linkPath, linkTargetId };
+    const payload = {
+      title: title.trim() || defaultTitle || 'Untitled task',
+      notes: notes.trim() || null,
+      dueDate: dueDate || null,
+      priority,
+      linkType,
+      linkPath,
+      linkTargetId,
+    };
 
     if (isEditing && task && onUpdate) {
       await onUpdate(task.id, payload);
@@ -289,8 +306,13 @@ function QuickTaskDialog({
   return (
     <Dialog open={open} onClose={onClose} title={isEditing ? 'Edit quick task' : 'New quick task'}>
       <div className="space-y-3">
-        <Field label="Title">
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Call the bank" autoFocus />
+        <Field label={canSubmitWithoutTitle ? 'Title (optional)' : 'Title'}>
+          <Input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={canSubmitWithoutTitle ? 'Defaults to the linked item’s name if left blank' : 'e.g. Call the bank'}
+            autoFocus
+          />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Due date (optional)">
@@ -344,7 +366,7 @@ function QuickTaskDialog({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={!title.trim() || submitting}>
+          <Button onClick={submit} disabled={(!title.trim() && !canSubmitWithoutTitle) || submitting}>
             {submitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add task'}
           </Button>
         </div>
