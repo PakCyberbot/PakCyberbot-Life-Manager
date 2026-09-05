@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
 import { getApi, useSettingsStore, useTimeTableStore } from '@life-manager/core';
 import { ThemeProvider, Toast } from '@life-manager/ui';
 import { MobileShell } from './layout/MobileShell';
 import type { MobileScreenId } from './navigation';
 import { scheduleTimeTableNotifications, TIME_TABLE_NOTIFICATIONS_SETTING_KEY } from './notifications/timeTableNotifications';
 import { useShareIntentCapture } from './native/useShareIntentCapture';
+import { runBackHandlers } from './native/backButtonStack';
 import { MobileDashboardScreen } from './screens/MobileDashboardScreen';
 import { MobileLibraryScreen } from './screens/MobileLibraryScreen';
 import { MoreScreen } from './screens/MoreScreen';
@@ -18,13 +20,60 @@ import { JobsView } from './screens/readonly/JobsView';
 import { HealthView } from './screens/readonly/HealthView';
 import { NewsView } from './screens/readonly/NewsView';
 
+// Every "section" screen reached via the More menu (readonly/*View.tsx plus Settings) already
+// sends its own in-app back arrow to 'more' — SectionHeader's onBack={() => onNavigate('more')}
+// is spelled out identically in each of them. This mirrors that same target for the hardware
+// button, so the two ways of going back agree; only 'dashboard'/'library'/'more' themselves (the
+// three bottom-tab screens) aren't reached that way, and get their own rule below.
+const SECTION_SCREENS: ReadonlySet<MobileScreenId> = new Set([
+  'goals',
+  'calendar',
+  'money',
+  'entertainment',
+  'earningWays',
+  'jobs',
+  'health',
+  'news',
+  'settings',
+]);
+
 export function App() {
   const [screen, setScreen] = useState<MobileScreenId>('dashboard');
+  const screenRef = useRef(screen);
   const { loaded, load } = useSettingsStore();
   const { slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
   const [autoSyncFailedMessage, setAutoSyncFailedMessage] = useState<string | null>(null);
 
   useShareIntentCapture(setScreen);
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  // Android's hardware/gesture back button had no listener registered anywhere in this app at
+  // all before this — it fell through to Capacitor's default (exit/minimize), since a single-page
+  // app has no real WebView history to step back through. runBackHandlers() first gives whatever
+  // full-screen overlay/detail view is currently active (the PDF reader, Goals' own goal detail —
+  // see backButtonStack.ts) first claim on the press; only once nothing claims it does this fall
+  // through to the same "back to More" target every section screen's own SectionHeader already
+  // uses, then "More/Library back to Dashboard," then a real exit from Dashboard itself — the
+  // standard Android bottom-tab back convention.
+  useEffect(() => {
+    const listenerPromise = CapacitorApp.addListener('backButton', () => {
+      if (runBackHandlers()) return;
+      const current = screenRef.current;
+      if (SECTION_SCREENS.has(current)) {
+        setScreen('more');
+      } else if (current === 'library' || current === 'more') {
+        setScreen('dashboard');
+      } else {
+        void CapacitorApp.exitApp();
+      }
+    });
+    return () => {
+      void listenerPromise.then((handle) => handle.remove());
+    };
+  }, []);
 
   useEffect(() => {
     if (!loaded) load();

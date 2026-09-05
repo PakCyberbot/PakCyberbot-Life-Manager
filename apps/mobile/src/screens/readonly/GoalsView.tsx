@@ -6,6 +6,7 @@ import { ListTodo, Pencil, Plus, Target, Trash2 } from 'lucide-react';
 import { SectionHeader } from '../../components/SectionHeader';
 import { TaskRow } from '../../components/TaskRow';
 import type { MobileScreenId } from '../../navigation';
+import { useBackHandler } from '../../native/backButtonStack';
 
 // Goals: the list + a per-goal detail view (fields/milestones/tasks are all
 // read-only there, same as desktop's original design before it grew editing)
@@ -28,6 +29,18 @@ export function GoalsView({ onNavigate }: { onNavigate: (s: MobileScreenId) => v
     if (!loaded) fetchGoals();
     if (!tasksLoaded) fetchTasks();
   }, [loaded, fetchGoals, tasksLoaded, fetchTasks]);
+
+  // Claims the hardware/gesture back button while a goal's detail view is showing, dismissing it
+  // back to the list — otherwise it fell through to Android's default (exit/minimize the app),
+  // the same gap that broke back from the PDF reader (see backButtonStack.ts).
+  useBackHandler(
+    selectedGoal
+      ? () => {
+          setSelectedGoal(null);
+          return true;
+        }
+      : null
+  );
 
   useEffect(() => {
     for (const g of goals) {

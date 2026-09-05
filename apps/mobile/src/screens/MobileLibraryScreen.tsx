@@ -37,7 +37,37 @@ export function MobileLibraryScreen() {
   // way bookmark tracking can work on mobile at all, since there's no way to observe another
   // app's reading position (same reasoning desktop's own in-app viewer was built for).
   const [readingBook, setReadingBook] = useState<Book | null>(null);
+  // A book's filePath can point at a file that no longer actually exists (app storage cleared, a
+  // reinstall that only brought the database back via Drive sync and not the PDF bytes
+  // themselves, etc.) — the row still looks "openable" by filePath/hostname alone, but opening it
+  // would just fail. Checked once per books-list change via Filesystem.stat (rejects if missing);
+  // a book that's both missing locally and has a driveFileId falls back to the same "Download"
+  // affordance a never-downloaded book gets, rather than silently failing to open.
+  const [missingFileIds, setMissingFileIds] = useState<Set<string>>(new Set());
   const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const checks = await Promise.all(
+        books
+          .filter((b) => !!b.filePath)
+          .map(async (b) => {
+            try {
+              await Filesystem.stat({ path: b.filePath! });
+              return null;
+            } catch {
+              return b.id;
+            }
+          })
+      );
+      if (cancelled) return;
+      setMissingFileIds(new Set(checks.filter((id): id is string => id !== null)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [books]);
 
   useEffect(() => {
     if (!booksLoaded) fetchBooks();
@@ -149,6 +179,7 @@ export function MobileLibraryScreen() {
             highlightId={highlightId}
             editMode={editMode}
             downloadingId={downloadingId}
+            missingFileIds={missingFileIds}
             onOpen={openBookTapped}
             onDownload={downloadBookTapped}
             onRemove={removeBook}
@@ -184,6 +215,7 @@ function BooksList({
   highlightId,
   editMode,
   downloadingId,
+  missingFileIds,
   onOpen,
   onDownload,
   onRemove,
@@ -193,6 +225,7 @@ function BooksList({
   highlightId: string | null;
   editMode: boolean;
   downloadingId: string | null;
+  missingFileIds: Set<string>;
   onOpen: (book: Book) => void;
   onDownload: (book: Book) => void;
   onRemove: (id: string) => void;
@@ -210,7 +243,8 @@ function BooksList({
     <div className="grid grid-cols-2 gap-3">
       {books.map((b) => {
         const onOtherHost = b.hostname && hostname && b.hostname !== hostname;
-        const openable = !!b.filePath && !onOtherHost;
+        const fileMissing = !!b.filePath && missingFileIds.has(b.id);
+        const openable = !!b.filePath && !onOtherHost && !fileMissing;
         return (
           <Card
             key={b.id}
@@ -236,20 +270,26 @@ function BooksList({
             <div className="flex items-start justify-between gap-1 p-2.5">
               <div className="min-w-0 flex-1">
                 <p className="line-clamp-2 text-xs font-medium leading-snug">{b.title}</p>
-                {onOtherHost && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
+                {onOtherHost && !fileMissing && <p className="mt-1 truncate text-[10px] text-muted">on {b.hostname}</p>}
+                {fileMissing && <p className="mt-1 truncate text-[10px] text-red-500">File missing on this device</p>}
                 {!openable && !b.driveFileId && <p className="mt-1 truncate text-[10px] text-muted">No file linked</p>}
                 {/* Gated on !openable, not !b.filePath — a book added on desktop already has a
                     filePath/hostname (the desktop machine's), so !b.filePath alone never catches
                     the actual common case: a desktop book with a driveFileId but on a different
                     host, which is exactly !openable. This was the real bug behind books synced
-                    from desktop never showing a Download affordance on mobile at all. */}
+                    from desktop never showing a Download affordance on mobile at all. openable
+                    also now folds in fileMissing — a book whose filePath points at a file that no
+                    longer actually exists (app storage cleared, a reinstall that only brought the
+                    database back via Drive sync and not the PDF bytes) looked "openable" by
+                    filePath/hostname alone and would just fail; this makes it redownloadable
+                    instead, same as a book that was never downloaded here at all. */}
                 {!openable && b.driveFileId && (
                   <button
                     onClick={() => onDownload(b)}
                     disabled={downloadingId === b.id}
                     className="mt-1 flex items-center gap-1 text-[10px] font-medium text-accentLibrary disabled:opacity-50"
                   >
-                    <Download size={11} /> {downloadingId === b.id ? 'Downloading…' : 'Download'}
+                    <Download size={11} /> {downloadingId === b.id ? 'Downloading…' : fileMissing ? 'Download again' : 'Download'}
                   </button>
                 )}
               </div>

@@ -6,6 +6,7 @@ import { Bookmark, BookmarkCheck, List, RotateCw, X, ZoomIn, ZoomOut } from 'luc
 import { base64ToBytes, Button, PageNumberDial } from '@life-manager/ui';
 import { useBooksStore } from '@life-manager/core';
 import type { Book } from '@life-manager/shared';
+import { useBackHandler } from '../native/backButtonStack';
 
 // Importing base64ToBytes from @life-manager/ui pulls in pdfCover.ts as a dependency, whose own
 // top-level code already points pdfjsLib.GlobalWorkerOptions.workerSrc at the bundled worker —
@@ -60,7 +61,27 @@ type Rotation = 0 | 90 | 180 | 270;
 
 export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: () => void }) {
   const { setBookmark } = useBooksStore();
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Typed `| null` (not just `<HTMLDivElement>(null)`) specifically so this resolves to a mutable
+  // MutableRefObject — the callback ref below assigns to .current itself, which React's other
+  // useRef overload (a plain RefObject, for the usual "just pass it to ref={...} and let React
+  // manage it" case) doesn't allow.
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // The scroll container only ever mounts once `pdf && pageSize` are both true (see the JSX below)
+  // — well after this component's own first render. An effect with a fixed dependency array that
+  // doesn't include *this* has no way to know when that finally happens: it either never re-runs
+  // (an empty [] — exactly the bug that left the pinch-zoom listeners permanently unattached, since
+  // containerRef.current was still null the one time that effect ever ran) or only re-runs for
+  // unrelated reasons that happen to land after the container exists by coincidence (which is what
+  // let the ResizeObserver effect appear to work in emulator testing, purely because a rotation
+  // change was tested after the container had already mounted for other reasons). `containerReady`
+  // flips true the instant the ref callback actually receives the DOM node, giving every effect
+  // below a dependency that's guaranteed to fire at the right time regardless of what else is
+  // happening.
+  const [containerReady, setContainerReady] = useState(false);
+  const setContainerRef = (el: HTMLDivElement | null) => {
+    containerRef.current = el;
+    setContainerReady(!!el);
+  };
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const hasScrolledToBookmark = useRef(false);
   // Set right before a zoom/rotation change so the pageSize-changed effect below knows to
@@ -139,7 +160,7 @@ export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: 
     return () => {
       cancelled = true;
     };
-  }, [pdf, zoom, rotation]);
+  }, [pdf, zoom, rotation, containerReady]);
 
   // Re-run the same geometry calculation whenever the container's own rendered width changes for
   // a reason *other* than our own zoom/rotation state — the actual mechanism behind "auto-adjust
@@ -164,11 +185,14 @@ export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: 
     observer.observe(el);
     return () => observer.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdf, rotation]);
+  }, [pdf, rotation, containerReady]);
 
   // Real two-finger pinch. Native listeners, not React's onTouch* props — synthetic touch
   // handlers are attached passively by default, which would make preventDefault() below silently
-  // do nothing, letting the container's own scroll fight the gesture.
+  // do nothing, letting the container's own scroll fight the gesture. Depends on containerReady,
+  // not an empty array — see its declaration above for why an empty array here was the actual bug
+  // behind pinch never doing anything at all: this effect used to run once, before the container
+  // (which only mounts once pdf/pageSize are ready) existed, and never got a chance to retry.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -216,7 +240,7 @@ export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: 
       el.removeEventListener('touchend', endPinch);
       el.removeEventListener('touchcancel', endPinch);
     };
-  }, []);
+  }, [containerReady]);
 
   // Resume at the bookmark once page geometry is first known — needs pageSize so every container
   // already has its real height and scrollIntoView lands in the right place the first time.
@@ -307,6 +331,22 @@ export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: 
     onClose();
   };
 
+  // Claims the hardware/gesture back button for as long as this full-screen reader is mounted —
+  // otherwise it fell through to Android's default (exit/minimize the whole app), since this is a
+  // single-page app with no WebView history to step back through. Always returns true: there's
+  // nothing "beneath" this within the component to fall through to, and letting it bubble up to
+  // the top-level screen-navigation fallback would be wrong (it would navigate the whole app away
+  // instead of just closing the reader).
+  useBackHandler(() => {
+    if (closeConfirmOpen) {
+      setCloseConfirmOpen(false);
+      onClose();
+    } else {
+      handleClose();
+    }
+    return true;
+  });
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
@@ -369,7 +409,7 @@ export function MobilePdfReaderScreen({ book, onClose }: { book: Book; onClose: 
       {!loading && !error && pdf && pageSize && (
         <div className="relative flex-1 overflow-hidden">
           <div
-            ref={containerRef}
+            ref={setContainerRef}
             onDoubleClick={() => changeZoom(zoom === 1 ? 2 : 1)}
             className="h-full overflow-auto"
           >
@@ -464,11 +504,22 @@ function PdfPageCanvas({
       const page = await pdf.getPage(pageNumber);
       if (cancelled) return;
       const baseViewport = page.getViewport({ scale: 1, rotation });
-      const viewport = page.getViewport({ scale: width / baseViewport.width, rotation });
+      const cssScale = width / baseViewport.width;
+      // Render at the device's real pixel density, not just the CSS-pixel target size — a phone
+      // screen is almost never devicePixelRatio 1, and a canvas whose raster buffer is sized to
+      // exactly its CSS box gets stretched across more physical pixels than it has, which is what
+      // "blurry text" actually is here (confirmed: this was the same bug on every zoom level, not
+      // specific to any one of them). The canvas's *raster* size (the width/height attributes) is
+      // scaled up by dpr; its *displayed* size (the CSS style width/height) stays at the original,
+      // non-scaled target so the layout math elsewhere in this component is unaffected.
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: cssScale * dpr, rotation });
       const canvas = canvasRef.current;
       if (!canvas) return;
       canvas.width = Math.round(viewport.width);
       canvas.height = Math.round(viewport.height);
+      canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
+      canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       task = page.render({ canvasContext: ctx, viewport });
@@ -486,5 +537,9 @@ function PdfPageCanvas({
     };
   }, [pdf, pageNumber, width, rotation]);
 
-  return <canvas ref={canvasRef} className="mx-auto block h-full" />;
+  {/* No h-full/CSS sizing here — the effect above sets canvas.style.width/height explicitly to
+      the dpr-corrected display size, which would otherwise fight a CSS class for the same
+      properties (see CLAUDE.md's width/height gotchas on Select/Input for the general shape of
+      that class of bug). */}
+  return <canvas ref={canvasRef} className="mx-auto block" />;
 }
