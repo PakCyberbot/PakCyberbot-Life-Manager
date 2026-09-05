@@ -32,6 +32,48 @@ const DRIVE_FOLDER_NAME = 'PakCyberbot Life Manager';
 const DB_FILE_NAME = 'life-manager.sqlite';
 const OAUTH_TIMEOUT_MS = 120_000;
 
+// lastPushedAt/lastPulledAt/driveFileModifiedTime are genuinely per-device facts ("what does THIS
+// device believe about its last sync"), but used to be stored as rows in the synced SQLite
+// database itself via store.setSetting — which pull() then wholesale-overwrote on every single
+// pull, right after this same function had already tried to correct it (see the old comment this
+// replaced: "the file gets overwritten wholesale right after ... same known non-issue already
+// accepted on desktop"). That framing was wrong — it wasn't a cosmetic non-issue, it silently
+// broke pullIfNewer's own newer-check: the freshly-downloaded database always carried a stale
+// driveFileModifiedTime (whatever the pushing device had written into it one version ago), so the
+// very next launch's pullIfNewer saw "remote is newer" again and pulled the identical content
+// forever — confirmed live as an infinite pull-and-reload loop. Fixed by moving all three out of
+// the synced database into localStorage, the same "this is per-device, not synced data" storage
+// this codebase already uses for theme — a plain synchronous write the database swap can never
+// touch, whatever order it happens relative to the download.
+const DRIVE_SYNC_STATE_KEY = 'driveSyncState';
+
+interface DriveSyncState {
+  lastPushedAt?: string;
+  lastPulledAt?: string;
+  driveFileModifiedTime?: string;
+}
+
+function readDriveSyncState(): DriveSyncState {
+  try {
+    const raw = localStorage.getItem(DRIVE_SYNC_STATE_KEY);
+    return raw ? (JSON.parse(raw) as DriveSyncState) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeDriveSyncState(patch: DriveSyncState): void {
+  try {
+    // Only spread in defined fields — an explicit `undefined` value would otherwise get dropped
+    // by JSON.stringify and silently erase a previously-saved one.
+    const defined = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+    localStorage.setItem(DRIVE_SYNC_STATE_KEY, JSON.stringify({ ...readDriveSyncState(), ...defined }));
+  } catch {
+    // Best-effort — worst case pullIfNewer treats the next check as "maybe newer" again, the same
+    // degraded-but-safe fallback the old design always had, not a new failure mode.
+  }
+}
+
 export function createMobileDriveSync(store: MobileDataStore): DriveApi {
   // Auto Sync's failure toast has no separate main process to push an IPC event from here — App.tsx
   // both triggers pullIfNewer() at startup AND subscribes via onAutoSyncFailed, same two-step shape
@@ -65,11 +107,12 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
   }
 
   async function status(): Promise<DriveStatus> {
+    const syncState = readDriveSyncState();
     return {
       connected: !!(await store.getSetting('googleRefreshToken')),
       email: await store.getSetting('googleConnectedEmail'),
-      lastPushedAt: await store.getSetting('lastPushedAt'),
-      lastPulledAt: await store.getSetting('lastPulledAt'),
+      lastPushedAt: syncState.lastPushedAt ?? null,
+      lastPulledAt: syncState.lastPulledAt ?? null,
     };
   }
 
@@ -249,14 +292,14 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       if (code < 200 || code >= 300) {
         return { ok: false, error: `Drive upload failed (${result.responseCode}): ${(result.response ?? '').slice(0, 200)}` };
       }
-      await store.setSetting('lastPushedAt', new Date().toISOString());
+      let driveFileModifiedTime: string | undefined;
       try {
-        const uploaded = JSON.parse(result.response ?? '{}') as { modifiedTime?: string };
-        if (uploaded.modifiedTime) await store.setSetting('driveFileModifiedTime', uploaded.modifiedTime);
+        driveFileModifiedTime = (JSON.parse(result.response ?? '{}') as { modifiedTime?: string }).modifiedTime;
       } catch {
         // Non-fatal — pullIfNewer just won't have a precise baseline until the next successful
         // push/pull sets one; it degrades to treating any remote file as "maybe newer."
       }
+      writeDriveSyncState({ lastPushedAt: new Date().toISOString(), driveFileModifiedTime });
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
@@ -275,18 +318,6 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       const file = await findFile(accessToken, folderId);
       if (!file) return { ok: false, error: 'No backup found in Drive yet — push from a device first.' };
 
-      // Written to the *current* (pre-pull) database, same relative ordering
-      // as desktop's driveSync.ts — it's really only a courtesy, not something
-      // that reliably survives: the file gets overwritten wholesale right
-      // after, so whatever lastPulledAt the pulled file itself already had
-      // (from whenever its source device last pulled) is what actually
-      // persists, same known non-issue already accepted on desktop (see
-      // driveSync.ts's own comment on the in-memory-vs-file staleness this
-      // pattern lives with, resolved there by exiting before anything can
-      // flush stale state back over the pulled file).
-      await store.setSetting('lastPulledAt', new Date().toISOString());
-      await store.setSetting('driveFileModifiedTime', file.modifiedTime);
-
       // Release the file lock before overwriting it — the same reasoning as
       // importRawDatabase's local-backup-import path.
       await store.close();
@@ -296,6 +327,11 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
         path: dbFilePath,
         headers: { Authorization: `Bearer ${accessToken}` },
       });
+
+      // localStorage, not store.setSetting — this has to survive the database file having just
+      // been overwritten wholesale above, which a setting written *into* that same database never
+      // would (see the top-of-file comment).
+      writeDriveSyncState({ lastPulledAt: new Date().toISOString(), driveFileModifiedTime: file.modifiedTime });
 
       // Mirrors desktop's app.relaunch() after a pull — a fresh createCapacitorDataStore()
       // call on reload opens a new connection against the freshly-downloaded file.
@@ -321,7 +357,7 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       const file = await findFile(accessToken, folderId);
       if (!file) return { ok: true, skipped: true }; // nothing pushed yet anywhere — nothing to pull
 
-      const lastKnown = await store.getSetting('driveFileModifiedTime');
+      const lastKnown = readDriveSyncState().driveFileModifiedTime ?? null;
       const isNewer = !lastKnown || new Date(file.modifiedTime).getTime() > new Date(lastKnown).getTime();
       if (!isNewer) return { ok: true, skipped: true };
 

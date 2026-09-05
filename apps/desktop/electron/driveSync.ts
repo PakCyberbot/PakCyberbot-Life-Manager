@@ -10,9 +10,10 @@
 // pasted into Settings once. Nothing here works without that — there's no
 // way to provision Google credentials on someone's behalf.
 
-import { shell } from 'electron';
+import { app, shell } from 'electron';
 import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import type { ElectronDataStore } from '@life-manager/db/src/electronDriver';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email';
@@ -20,6 +21,49 @@ const DRIVE_FOLDER_NAME = 'PakCyberbot Life Manager';
 const BOOKS_FOLDER_NAME = 'Books';
 const DB_FILE_NAME = 'life-manager.sqlite';
 const OAUTH_TIMEOUT_MS = 120_000;
+
+// lastPushedAt/lastPulledAt/driveFileModifiedTime are all genuinely per-device facts ("what does
+// THIS device believe about its last sync"), yet they used to live as rows in the synced SQLite
+// database itself — the exact thing that gets overwritten wholesale on every pull and re-read
+// fresh from disk on the very next launch. That's a real bug, not just an odd modeling choice:
+// push() read dbFilePath's bytes for upload *before* recording the new driveFileModifiedTime, so
+// every pushed snapshot's own embedded value was always one version stale; pull() then tried to
+// correct it by writing to the *pre-pull* in-memory store, but that correction is an ElectronData-
+// Store write, which is debounced (~250ms) before it reaches disk — and Auto Sync's pull-on-
+// startup calls app.exit() immediately after a real pull, well before that debounce fires, so the
+// correction was silently discarded every single time. The freshly-pulled file on disk therefore
+// always carried the same stale value forever, so pullIfNewer's very next comparison saw "remote
+// is newer" again on every subsequent launch — an infinite pull-and-relaunch loop, confirmed live.
+// Fixed by moving all three out of the synced database into a small sidecar JSON file next to it,
+// written with a plain synchronous fs call (no debounce, no dependency on the store's lifecycle or
+// on process-exit timing) that the sync operation itself can never overwrite.
+interface DriveSyncState {
+  lastPushedAt?: string;
+  lastPulledAt?: string;
+  driveFileModifiedTime?: string;
+}
+
+function driveSyncStatePath(): string {
+  return path.join(app.getPath('userData'), 'drive-sync-state.json');
+}
+
+function readDriveSyncState(): DriveSyncState {
+  try {
+    return JSON.parse(fs.readFileSync(driveSyncStatePath(), 'utf-8')) as DriveSyncState;
+  } catch {
+    return {}; // no sidecar yet (fresh install, or never synced) — every field reads as unset
+  }
+}
+
+function writeDriveSyncState(patch: DriveSyncState): void {
+  try {
+    const next = { ...readDriveSyncState(), ...patch };
+    fs.writeFileSync(driveSyncStatePath(), JSON.stringify(next));
+  } catch {
+    // Best-effort — worst case pullIfNewer treats the next check as "maybe newer" again, the same
+    // degraded-but-safe fallback the old design always had, not a new failure mode.
+  }
+}
 
 export interface DriveUploadBookResult extends DriveSyncResult {
   fileId?: string;
@@ -77,11 +121,12 @@ export function createDriveSync(store: ElectronDataStore) {
   }
 
   function status(): DriveStatus {
+    const syncState = readDriveSyncState();
     return {
       connected: !!store.getSetting('googleRefreshToken'),
       email: store.getSetting('googleConnectedEmail'),
-      lastPushedAt: store.getSetting('lastPushedAt'),
-      lastPulledAt: store.getSetting('lastPulledAt'),
+      lastPushedAt: syncState.lastPushedAt ?? null,
+      lastPulledAt: syncState.lastPulledAt ?? null,
     };
   }
 
@@ -299,8 +344,13 @@ export function createDriveSync(store: ElectronDataStore) {
         return { ok: false, error: `Drive upload failed (${res.status}): ${errBody.slice(0, 200)}` };
       }
       const uploaded = (await res.json()) as { modifiedTime?: string };
-      store.setSetting('lastPushedAt', new Date().toISOString());
-      if (uploaded.modifiedTime) store.setSetting('driveFileModifiedTime', uploaded.modifiedTime);
+      // Spread order matters: an explicit `driveFileModifiedTime: undefined` in the patch would
+      // still overwrite the previously-saved value with undefined once JSON.stringify drops the
+      // key — so only include it when Drive actually returned one.
+      writeDriveSyncState({
+        lastPushedAt: new Date().toISOString(),
+        ...(uploaded.modifiedTime ? { driveFileModifiedTime: uploaded.modifiedTime } : {}),
+      });
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
@@ -373,8 +423,10 @@ export function createDriveSync(store: ElectronDataStore) {
 
       const buf = Buffer.from(await res.arrayBuffer());
       fs.writeFileSync(dbFilePath, buf);
-      store.setSetting('lastPulledAt', new Date().toISOString());
-      store.setSetting('driveFileModifiedTime', file.modifiedTime);
+      // A plain, immediate fs write to the sidecar file, not store.setSetting — this has to
+      // survive the app.exit() that Auto Sync's pull-on-startup fires right after this returns,
+      // which a debounced ElectronDataStore write never would (see the top-of-file comment).
+      writeDriveSyncState({ lastPulledAt: new Date().toISOString(), driveFileModifiedTime: file.modifiedTime });
       return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err) };
@@ -398,7 +450,7 @@ export function createDriveSync(store: ElectronDataStore) {
       const file = await findFile(accessToken, folderId);
       if (!file) return { ok: true, skipped: true }; // nothing pushed yet anywhere — nothing to pull
 
-      const lastKnown = store.getSetting('driveFileModifiedTime');
+      const lastKnown = readDriveSyncState().driveFileModifiedTime ?? null;
       const isNewer = !lastKnown || new Date(file.modifiedTime).getTime() > new Date(lastKnown).getTime();
       if (!isNewer) return { ok: true, skipped: true };
 
