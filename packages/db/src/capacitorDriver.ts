@@ -87,7 +87,40 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
       ? await sqlite.retrieveConnection(DB_NAME, false)
       : await sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
 
-  await db.open();
+  // A genuinely corrupted on-disk file used to throw here and propagate all the way up to
+  // main.tsx's bootstrap() with nothing catching it — the app just sat on its "Loading your
+  // data…" splash forever. Confirmed happening for real: a device that hit the since-fixed Auto
+  // Sync infinite-pull-loop bug (see driveSync's own notes) reloaded repeatedly mid pull(), and a
+  // reload interrupting an in-flight FileTransfer.downloadFile writing straight over this same
+  // file left a truncated/malformed sqlite database behind — Android's own SQLite layer then
+  // fails on the very first `PRAGMA journal_mode` it runs against the file, before this driver
+  // ever gets a chance to run its own schema/migration statements.
+  //
+  // Best-effort self-heal: retry once against a freshly deleted file. This does NOT reliably work
+  // for this exact failure mode — confirmed by reading the plugin's own Android source
+  // (Database.java's deleteDB() tries to open() the file first, purely to close it cleanly,
+  // before removing it, so it throws the identical corruption error instead of ever deleting
+  // anything — there is no lower-level "just unlink the bytes" call exposed to JS.  It's still
+  // attempted here (cheap, and it does help a milder corruption where open() partially succeeds),
+  // but a second failure is expected and must never be swallowed: it propagates as a real,
+  // typed error so main.tsx can show the user something actionable instead of hanging silently a
+  // second time. There is no way to recover the corrupted bytes themselves — if this device ever
+  // pushed to Drive before going bad, that copy is untouched (a push only ever uploads from a
+  // database that was actually open and working at the time), so reconnecting Drive and Pulling
+  // in Settings is the real way back, not anything this function can do on its own.
+  try {
+    await db.open();
+  } catch (openError) {
+    console.warn('[capacitorDriver] db.open() failed — attempting to discard and recreate the database:', openError);
+    try {
+      await db.delete();
+      await db.open();
+    } catch (recoveryError) {
+      throw new Error(
+        `Could not open the local database — it appears to be corrupted and could not be automatically repaired (${String(recoveryError)}).`
+      );
+    }
+  }
 
   // Cached once, right after opening — needed by importRawDatabase (below) and by anything reading the
   // path post-close (Drive pull, via getDatabaseFilePath()), since a closed/reopening connection can't be

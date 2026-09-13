@@ -24,20 +24,51 @@ async function bootstrap() {
   const root = createRoot(document.getElementById('root')!);
   root.render(<SplashScreen />);
 
-  const store = await createCapacitorDataStore();
-  window.api = buildMobileApi(store);
+  // createCapacitorDataStore() rejecting (a genuinely corrupted local database — see
+  // capacitorDriver.ts's own notes) used to leave the splash above on screen forever: nothing
+  // here ever caught it, so the app just looked stuck at startup with zero indication anything
+  // had gone wrong. Confirmed happening for real on a user's own device. Never let that happen
+  // silently again — any failure here has to reach the screen as something actionable.
+  try {
+    const store = await createCapacitorDataStore();
+    window.api = buildMobileApi(store);
 
-  root.render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  );
+    root.render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    );
+  } catch (err) {
+    console.error('[bootstrap] failed to open the local database:', err);
+    root.render(<StartupErrorScreen message={err instanceof Error ? err.message : String(err)} />);
+  }
 }
 
 function SplashScreen() {
   return (
     <div className="flex h-full w-full items-center justify-center bg-background text-sm text-muted">
       Loading your data…
+    </div>
+  );
+}
+
+function StartupErrorScreen({ message }: { message: string }) {
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-3 bg-background px-6 text-center">
+      <div className="text-base font-semibold text-red-500">Couldn't load your data</div>
+      <p className="max-w-xs text-sm text-muted">{message}</p>
+      <p className="max-w-xs text-xs text-muted">
+        If this keeps happening, the local database file is likely damaged beyond repair. Go to Android
+        Settings → Apps → PakCyberbot Life Manager → Storage → Clear storage, reopen the app, then
+        reconnect Google Drive in Settings and tap Pull — if you'd synced before, your data is still
+        safe there.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-1 rounded-lg border border-border bg-background px-4 py-2 text-sm text-foreground active:bg-surface"
+      >
+        Try again
+      </button>
     </div>
   );
 }
