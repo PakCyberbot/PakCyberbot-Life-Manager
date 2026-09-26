@@ -108,15 +108,57 @@ function buildSettings(store: MobileDataStore, scheduleAutoPush: () => void): Se
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
+// A real-world og:image/favicon fetch has no upper bound on the other end — some sites' hero
+// images run several MB — and a hung request (slow host, a redirect chain that never resolves)
+// has no natural timeout either. Neither mattered on desktop (Node's fetch has no default
+// timeout either, but Buffer handles even a large arraybuffer fine), but both are real hazards
+// in a memory-constrained mobile WebView, and are the most likely explanation for a second real
+// bug found live on a user's device: saving a web link first "had an issue" (this fetch hanging
+// or the WebView struggling on a large image), and shortly after, the local database was found
+// corrupted the next time the app opened (see capacitorDriver.ts's own notes on that failure
+// mode) — a WebView OOM/crash partway through this same call's own db.update() write landing on
+// the native SQLite bridge is a very plausible way to interrupt a write mid-transaction. Capped
+// and given a timeout here so a huge or hanging fetch is skipped outright instead of risking
+// either, even though this isn't provable as *the* cause with certainty.
+const FETCH_TIMEOUT_MS = 20000;
+const MAX_PREVIEW_IMAGE_BYTES = 4 * 1024 * 1024;
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchImageAsDataUri(imageUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(imageUrl);
+    const res = await fetchWithTimeout(imageUrl);
     if (!res.ok) return null;
+
+    // Bail before downloading anything if the server told us upfront — not every host sends
+    // Content-Length (chunked transfer omits it), so this is a best-effort early exit, not the
+    // only guard; the byteLength check below after download is the real backstop.
+    const declaredLength = Number(res.headers.get('content-length') ?? 'NaN');
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_PREVIEW_IMAGE_BYTES) return null;
+
     const buf = await res.arrayBuffer();
+    if (buf.byteLength > MAX_PREVIEW_IMAGE_BYTES) return null;
+
     const contentType = res.headers.get('content-type') ?? 'image/jpeg';
-    let binary = '';
     const bytes = new Uint8Array(buf);
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    // Building the binary string one byte at a time (the previous version's
+    // `for (...) binary += String.fromCharCode(bytes[i])`) is O(n²) in effect for a large
+    // buffer — each += re-copies the whole string so far — and was a real risk of janking or
+    // OOMing the WebView well before the 4MB cap above would even matter for a merely
+    // "sizable, not huge" image. Chunking keeps each concatenation bounded and linear overall.
+    let binary = '';
+    const CHUNK = 8192;
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+    }
     return `data:${contentType};base64,${btoa(binary)}`;
   } catch {
     return null;
@@ -125,7 +167,7 @@ async function fetchImageAsDataUri(imageUrl: string): Promise<string | null> {
 
 async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | null; thumbnail: string | null } | null> {
   try {
-    const res = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
+    const res = await fetchWithTimeout(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`);
     if (!res.ok) return null;
     const data = (await res.json()) as { title?: string; thumbnail_url?: string };
     const thumbnail = data.thumbnail_url ? await fetchImageAsDataUri(data.thumbnail_url) : null;
@@ -137,7 +179,7 @@ async function fetchYouTubeThumbnail(url: string): Promise<{ title: string | nul
 
 async function fetchWikipediaSummaryThumbnail(title: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+    const res = await fetchWithTimeout(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
     if (!res.ok) return null;
     const data = (await res.json()) as { thumbnail?: { source?: string } };
     return data.thumbnail?.source ?? null;
@@ -161,7 +203,7 @@ async function fetchWikipediaThumbnail(title: string, type: string): Promise<str
   let imageUrl = await fetchWikipediaSummaryThumbnail(title);
   if (!imageUrl) {
     try {
-      const searchRes = await fetch(
+      const searchRes = await fetchWithTimeout(
         `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=1&format=json`
       );
       if (searchRes.ok) {
@@ -198,7 +240,7 @@ function extractMetaContent(html: string, property: string): string | null {
 
 async function fetchWebPreview(url: string): Promise<{ title: string | null; image: string | null; favicon: string | null } | null> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' } });
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' } });
     if (!res.ok) return null;
     const html = await res.text();
 
