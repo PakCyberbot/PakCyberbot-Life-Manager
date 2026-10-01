@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
-import { getApi, useSettingsStore, useTimeTableStore } from '@life-manager/core';
+import { getApi, useCalendarStore, useSettingsStore, useTimeTableStore } from '@life-manager/core';
 import { Button, Dialog, ThemeProvider, Toast } from '@life-manager/ui';
 import { MobileShell } from './layout/MobileShell';
 import type { MobileScreenId } from './navigation';
 import { scheduleTimeTableNotifications, TIME_TABLE_NOTIFICATIONS_SETTING_KEY } from './notifications/timeTableNotifications';
+import { scheduleCalendarNotifications, CALENDAR_NOTIFICATIONS_SETTING_KEY } from './notifications/calendarNotifications';
 import { useShareIntentCapture } from './native/useShareIntentCapture';
 import { runBackHandlers } from './native/backButtonStack';
 import { MobileDashboardScreen } from './screens/MobileDashboardScreen';
@@ -42,6 +43,7 @@ export function App() {
   const screenRef = useRef(screen);
   const { loaded, load } = useSettingsStore();
   const { slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
+  const { events, fetchEvents, loaded: calendarLoaded } = useCalendarStore();
   const [autoSyncFailedMessage, setAutoSyncFailedMessage] = useState<string | null>(null);
 
   const { pendingWebLinkShare, resolvePendingWebLinkShare, dismissPendingWebLinkShare } = useShareIntentCapture(setScreen);
@@ -78,8 +80,9 @@ export function App() {
   useEffect(() => {
     if (!loaded) load();
     if (!timeTableLoaded) fetchTimeTable();
+    if (!calendarLoaded) fetchEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loaded, timeTableLoaded]);
+  }, [loaded, timeTableLoaded, calendarLoaded]);
 
   // Auto Sync: pull-on-startup. Unlike desktop (which runs this in main.ts before any renderer
   // exists), mobile has no separate main process — this runs right here instead, once settings
@@ -115,6 +118,18 @@ export function App() {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, timeTableLoaded]);
+
+  // Same reschedule-on-boot pattern as Time Table above, for Calendar's own 1-day-before/at-time
+  // notification pair.
+  useEffect(() => {
+    if (!loaded || !calendarLoaded) return;
+    getApi()
+      .settings.get(CALENDAR_NOTIFICATIONS_SETTING_KEY)
+      .then((value) => {
+        if (value === 'on') void scheduleCalendarNotifications(events);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, calendarLoaded]);
 
   return (
     <ThemeProvider>

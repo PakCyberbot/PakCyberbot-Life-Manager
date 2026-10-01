@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, ThemeToggle, Switch, Button, Badge, Field, Input, Select } from '@life-manager/ui';
-import { getApi, useSettingsStore, useTimeTableStore } from '@life-manager/core';
+import { getApi, useCalendarStore, useSettingsStore, useTimeTableStore } from '@life-manager/core';
 import type { ClockStyle, ClockTimeFormat, DriveStatus } from '@life-manager/core';
 import { Bell, Cloud, CloudOff, Download, ExternalLink, Upload } from 'lucide-react';
 import { SectionHeader } from '../components/SectionHeader';
@@ -10,6 +10,11 @@ import {
   scheduleTimeTableNotifications,
   TIME_TABLE_NOTIFICATIONS_SETTING_KEY,
 } from '../notifications/timeTableNotifications';
+import {
+  cancelCalendarNotifications,
+  scheduleCalendarNotifications,
+  CALENDAR_NOTIFICATIONS_SETTING_KEY,
+} from '../notifications/calendarNotifications';
 
 export function MobileSettingsScreen({ onNavigate }: { onNavigate: (s: MobileScreenId) => void }) {
   return (
@@ -27,6 +32,7 @@ export function MobileSettingsScreen({ onNavigate }: { onNavigate: (s: MobileScr
         </Card>
 
         <TimeTableNotificationsCard />
+        <CalendarNotificationsCard />
         <BackupCard />
         <DriveSyncCard />
         <HelpCard />
@@ -298,6 +304,65 @@ function TimeTableNotificationsCard() {
         </p>
         {slots.length === 0 && (
           <p className="text-xs text-muted">No Time Table slots on this device yet — nothing to schedule until some sync over.</p>
+        )}
+        {error && <p className="text-xs text-red-500">{error}</p>}
+        {busy && <p className="text-xs text-muted">Updating…</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CalendarNotificationsCard() {
+  const { events, fetchEvents, loaded } = useCalendarStore();
+  const [enabled, setEnabled] = useState(false);
+  const [settingLoaded, setSettingLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!loaded) fetchEvents();
+    getApi()
+      .settings.get(CALENDAR_NOTIFICATIONS_SETTING_KEY)
+      .then((value) => {
+        setEnabled(value === 'on');
+        setSettingLoaded(true);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggle = async (next: boolean) => {
+    setBusy(true);
+    setError(null);
+    if (next) {
+      const granted = await scheduleCalendarNotifications(events);
+      if (!granted) {
+        setError('Notification permission was denied — enable it for this app in Android Settings, then try again.');
+        setBusy(false);
+        return;
+      }
+    } else {
+      await cancelCalendarNotifications();
+    }
+    await getApi().settings.set(CALENDAR_NOTIFICATIONS_SETTING_KEY, next ? 'on' : 'off');
+    setEnabled(next);
+    setBusy(false);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bell size={15} className="text-muted" />
+          Calendar reminders
+        </CardTitle>
+        {settingLoaded && <Switch checked={enabled} onChange={toggle} label="Calendar reminders" />}
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <p className="text-sm text-muted">
+          A reminder 1 day before each event, and a small beep + vibration right when it starts.
+        </p>
+        {events.length === 0 && (
+          <p className="text-xs text-muted">No Calendar events on this device yet — nothing to schedule until some sync over.</p>
         )}
         {error && <p className="text-xs text-red-500">{error}</p>}
         {busy && <p className="text-xs text-muted">Updating…</p>}
