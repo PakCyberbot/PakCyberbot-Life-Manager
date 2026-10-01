@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BookOpen, Download, FileWarning, Globe, Pencil, Play, Plus, Trash2, Upload } from 'lucide-react';
 import { getApi, useBooksStore, useUiFocusStore, useVideosStore, useWebLinksStore } from '@life-manager/core';
-import type { Book, VideoKind, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
+import type { Book, VideoKind, WebLinkReadLength, WebLinkStatus, VideoStatus, Video, WebLink } from '@life-manager/shared';
 import { Card, Badge, Button, Dialog, Field, Input, Switch, Textarea, EmptyState } from '@life-manager/ui';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import clsx from 'clsx';
@@ -11,6 +11,7 @@ import { MobilePdfReaderScreen } from './MobilePdfReaderScreen';
 type Tab = 'books' | 'videos' | 'webLinks';
 const TAB_LABEL: Record<Tab, string> = { books: 'Books', videos: 'Videos', webLinks: 'Web links' };
 const ONLY_THIS_HOST_SETTING_KEY = 'libraryOnlyThisHostBooks';
+const READ_LENGTH_LABEL: Record<WebLinkReadLength, string> = { short: 'Short read', long: 'Long read' };
 
 // The one editable section on mobile — same three Library tabs as desktop,
 // rebuilt single-column for a phone (not a port of desktop's LibraryScreen,
@@ -26,6 +27,7 @@ export function MobileLibraryScreen() {
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
   const [onlyThisHost, setOnlyThisHost] = useState(false);
+  const [readLengthFilter, setReadLengthFilter] = useState<'all' | WebLinkReadLength>('all');
   // Off means pure browse/open; on reveals Delete (Books/Videos/Web links) and Edit (Videos/Web
   // links) everywhere — same top-right toggle pattern as Goals' Quick Tasks and Savings, so a
   // stray tap on a small phone screen can't misfire into deleting an entry.
@@ -89,6 +91,10 @@ export function MobileLibraryScreen() {
   const visibleBooks = useMemo(
     () => (onlyThisHost ? books.filter((b) => !b.hostname || b.hostname === hostname || !!b.driveFileId) : books),
     [books, onlyThisHost, hostname]
+  );
+  const filteredWebLinks = useMemo(
+    () => (readLengthFilter === 'all' ? webLinks : webLinks.filter((l) => l.readLength === readLengthFilter)),
+    [webLinks, readLengthFilter]
   );
 
   const openBookTapped = (book: Book) => {
@@ -196,7 +202,28 @@ export function MobileLibraryScreen() {
         />
       )}
       {tab === 'webLinks' && (
-        <WebLinksList webLinks={webLinks} onEmptyAdd={() => setAddOpen(true)} editMode={editMode} onEdit={setEditingWebLink} />
+        <>
+          <div className="inline-flex w-full items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+            {(['all', 'short', 'long'] as const).map((r) => (
+              <button
+                key={r}
+                onClick={() => setReadLengthFilter(r)}
+                className={clsx(
+                  'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                  readLengthFilter === r ? 'bg-surface text-accentLibrary shadow-sm' : 'text-muted'
+                )}
+              >
+                {r === 'all' ? 'All' : READ_LENGTH_LABEL[r]}
+              </button>
+            ))}
+          </div>
+          <WebLinksList
+            webLinks={filteredWebLinks}
+            onEmptyAdd={() => setAddOpen(true)}
+            editMode={editMode}
+            onEdit={setEditingWebLink}
+          />
+        </>
       )}
 
       {tab === 'books' && <NewBookDialog open={addOpen} onClose={() => setAddOpen(false)} />}
@@ -420,14 +447,24 @@ function WebLinksList({
           </button>
           <div className="min-w-0 flex-1">
             <p className="line-clamp-2 text-sm font-medium leading-snug">{link.title}</p>
-            <select
-              value={link.status}
-              onChange={(e) => updateWebLink(link.id, { status: e.target.value as WebLinkStatus })}
-              className="mt-1 w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px]"
-            >
-              <option value="to-explore">To explore</option>
-              <option value="explored">Explored</option>
-            </select>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <select
+                value={link.status}
+                onChange={(e) => updateWebLink(link.id, { status: e.target.value as WebLinkStatus })}
+                className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px]"
+              >
+                <option value="to-explore">To explore</option>
+                <option value="explored">Explored</option>
+              </select>
+              <select
+                value={link.readLength}
+                onChange={(e) => updateWebLink(link.id, { readLength: e.target.value as WebLinkReadLength })}
+                className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-[11px]"
+              >
+                <option value="short">Short read</option>
+                <option value="long">Long read</option>
+              </select>
+            </div>
           </div>
           {editMode && (
             <div className="flex shrink-0 flex-col gap-2 self-start">
@@ -582,27 +619,29 @@ function NewVideoDialog({ open, onClose, video }: { open: boolean; onClose: () =
 
 // Doubles as the edit dialog when a `webLink` prop is passed. Editing keeps the URL fixed (re-
 // fetching a new preview in place isn't worth the complexity for this pass) and only lets title/
-// notes change.
+// notes/read-length change.
 function NewWebLinkDialog({ open, onClose, webLink }: { open: boolean; onClose: () => void; webLink?: WebLink }) {
   const { addWebLink, updateWebLink } = useWebLinksStore();
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState(webLink?.title ?? '');
   const [notes, setNotes] = useState(webLink?.notes ?? '');
+  const [readLength, setReadLength] = useState<WebLinkReadLength>(webLink?.readLength ?? 'short');
   const [fetching, setFetching] = useState(false);
 
   const submit = async () => {
     if (webLink) {
-      await updateWebLink(webLink.id, { title: title.trim() || webLink.title, notes: notes.trim() || null });
+      await updateWebLink(webLink.id, { title: title.trim() || webLink.title, notes: notes.trim() || null, readLength });
       onClose();
       return;
     }
     if (!url.trim()) return;
     setFetching(true);
-    await addWebLink(url.trim(), title.trim(), notes.trim() || null);
+    await addWebLink(url.trim(), title.trim(), notes.trim() || null, readLength);
     setFetching(false);
     setUrl('');
     setTitle('');
     setNotes('');
+    setReadLength('short');
     onClose();
   };
 
@@ -619,6 +658,23 @@ function NewWebLinkDialog({ open, onClose, webLink }: { open: boolean; onClose: 
         </Field>
         <Field label="Notes (optional)">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <Field label="How long a read is this?">
+          <div className="inline-flex w-full items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+            {(['short', 'long'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReadLength(r)}
+                className={clsx(
+                  'flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+                  readLength === r ? 'bg-surface text-accentLibrary shadow-sm' : 'text-muted'
+                )}
+              >
+                {READ_LENGTH_LABEL[r]}
+              </button>
+            ))}
+          </div>
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>

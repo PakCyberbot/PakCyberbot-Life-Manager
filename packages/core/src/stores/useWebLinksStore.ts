@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { newId, nowIso, type WebLink } from '@life-manager/shared';
+import { newId, nowIso, type WebLink, type WebLinkReadLength } from '@life-manager/shared';
 import { getApi } from '../api';
 
 interface WebLinksState {
@@ -10,8 +10,8 @@ interface WebLinksState {
   pendingPreviewIds: Set<string>;
 
   fetchWebLinks: () => Promise<void>;
-  /** Creates the row immediately, then fills in the preview image/favicon (and title, if not user-set) asynchronously once it lands. */
-  addWebLink: (url: string, title?: string, notes?: string | null) => Promise<WebLink>;
+  /** Creates the row immediately, then fills in the preview image/favicon (and title, if not user-set) asynchronously once it lands. `readLength` defaults to 'short' — the same default the database column itself falls back to for pre-existing rows. */
+  addWebLink: (url: string, title?: string, notes?: string | null, readLength?: WebLinkReadLength) => Promise<WebLink>;
   updateWebLink: (id: string, patch: Partial<WebLink>) => Promise<void>;
   removeWebLink: (id: string) => Promise<void>;
 }
@@ -28,7 +28,7 @@ export const useWebLinksStore = create<WebLinksState>((set, get) => ({
     set({ webLinks, loading: false, loaded: true });
   },
 
-  async addWebLink(url, title, notes) {
+  async addWebLink(url, title, notes, readLength) {
     const userTitle = title?.trim();
     const link: WebLink = {
       id: newId(),
@@ -38,6 +38,7 @@ export const useWebLinksStore = create<WebLinksState>((set, get) => ({
       favicon: null,
       notes: notes ?? null,
       status: 'to-explore',
+      readLength: readLength ?? 'short',
       createdAt: nowIso(),
       updatedAt: nowIso(),
       deletedAt: null,

@@ -161,6 +161,10 @@ export async function createElectronDataStore(dbFilePath: string): Promise<Elect
   ensureColumn('tasks', 'linkedMilestoneId', 'TEXT');
   ensureColumn('books', 'syncedToDrive', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn('books', 'driveFileId', 'TEXT');
+  // DEFAULT 'short' backfills every existing row automatically (SQLite applies a NOT NULL
+  // column's DEFAULT to pre-existing rows on ALTER TABLE ADD COLUMN) — no separate migration
+  // needed for "every web link added before this shipped is a Short Read".
+  ensureColumn('webLinks', 'readLength', "TEXT NOT NULL DEFAULT 'short'");
 
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 

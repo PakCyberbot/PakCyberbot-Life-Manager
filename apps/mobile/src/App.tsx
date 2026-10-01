@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { getApi, useSettingsStore, useTimeTableStore } from '@life-manager/core';
-import { ThemeProvider, Toast } from '@life-manager/ui';
+import { Button, Dialog, ThemeProvider, Toast } from '@life-manager/ui';
 import { MobileShell } from './layout/MobileShell';
 import type { MobileScreenId } from './navigation';
 import { scheduleTimeTableNotifications, TIME_TABLE_NOTIFICATIONS_SETTING_KEY } from './notifications/timeTableNotifications';
@@ -44,7 +44,7 @@ export function App() {
   const { slots, fetchAll: fetchTimeTable, loaded: timeTableLoaded } = useTimeTableStore();
   const [autoSyncFailedMessage, setAutoSyncFailedMessage] = useState<string | null>(null);
 
-  useShareIntentCapture(setScreen);
+  const { pendingWebLinkShare, resolvePendingWebLinkShare, dismissPendingWebLinkShare } = useShareIntentCapture(setScreen);
 
   useEffect(() => {
     screenRef.current = screen;
@@ -133,6 +133,27 @@ export function App() {
         {screen === 'news' && <NewsView onNavigate={setScreen} />}
       </MobileShell>
       <Toast message={autoSyncFailedMessage} onDismiss={() => setAutoSyncFailedMessage(null)} />
+      <Dialog
+        open={!!pendingWebLinkShare}
+        onClose={dismissPendingWebLinkShare}
+        title="Save this link"
+      >
+        <div className="space-y-3">
+          <p className="truncate text-xs text-muted">{pendingWebLinkShare?.url}</p>
+          <p className="text-sm">Is this a short read or a long one?</p>
+          <div className="flex gap-2">
+            <Button className="flex-1" variant="outline" onClick={() => resolvePendingWebLinkShare('short')}>
+              Short read
+            </Button>
+            <Button className="flex-1" onClick={() => resolvePendingWebLinkShare('long')}>
+              Long read
+            </Button>
+          </div>
+          <Button variant="ghost" className="w-full" onClick={dismissPendingWebLinkShare}>
+            Don't save
+          </Button>
+        </div>
+      </Dialog>
     </ThemeProvider>
   );
 }

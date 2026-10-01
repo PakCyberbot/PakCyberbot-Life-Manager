@@ -177,6 +177,12 @@ export interface Quote extends BaseRow {
  * as everything else's thumbnails — see structure.md's Library section). */
 export type WebLinkStatus = 'to-explore' | 'explored';
 
+/** A quick personal read-time estimate the user picks (or is asked to pick on a mobile share) —
+ * not measured, just "do I need 5 minutes or a real sitting for this". Column defaults to 'short'
+ * at the database level (see schema.ts/ensureColumn), so every web link that existed before this
+ * field was added reads as 'short' automatically — never an unset/undefined state to handle. */
+export type WebLinkReadLength = 'short' | 'long';
+
 export interface WebLink extends BaseRow {
   title: string;
   url: string;
@@ -186,6 +192,7 @@ export interface WebLink extends BaseRow {
   favicon?: string | null;
   notes?: string | null;
   status: WebLinkStatus;
+  readLength: WebLinkReadLength;
 }
 
 // ---------------------------------------------------------------------------

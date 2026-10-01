@@ -29,8 +29,29 @@ export function MobileSettingsScreen({ onNavigate }: { onNavigate: (s: MobileScr
         <TimeTableNotificationsCard />
         <BackupCard />
         <DriveSyncCard />
+        <HelpCard />
       </div>
     </div>
+  );
+}
+
+function HelpCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Help &amp; feedback</CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3">
+        <p className="text-sm text-muted">Found a bug, or something behaving oddly? Open an issue on GitHub.</p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => getApi().system.openExternal('https://github.com/PakCyberbot/PakCyberbot-Life-Manager/issues')}
+        >
+          <ExternalLink size={14} /> Report
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

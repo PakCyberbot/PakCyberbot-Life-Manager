@@ -195,6 +195,7 @@ export const SCHEMA_STATEMENTS: string[] = [
     favicon TEXT,
     notes TEXT,
     status TEXT NOT NULL DEFAULT 'to-explore',
+    readLength TEXT NOT NULL DEFAULT 'short',
     createdAt TEXT NOT NULL,
     updatedAt TEXT NOT NULL,
     deletedAt TEXT

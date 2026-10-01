@@ -9,6 +9,7 @@ import {
   type VideoKind,
   type VideoStatus,
   type WebLink,
+  type WebLinkReadLength,
   type WebLinkStatus,
 } from '@life-manager/shared';
 import { Card } from '../components/ui/Card';
@@ -29,6 +30,8 @@ const WEB_LINK_STATUS_TONE: Record<WebLinkStatus, 'default' | 'success'> = {
   'to-explore': 'default',
   explored: 'success',
 };
+
+const READ_LENGTH_LABEL: Record<WebLinkReadLength, string> = { short: 'Short read', long: 'Long read' };
 
 const BOOK_STATUS_TONE: Record<BookStatus, 'default' | 'warning' | 'success'> = {
   'to-read': 'default',
@@ -52,6 +55,7 @@ export function LibraryScreen() {
   const [webLinkDialogOpen, setWebLinkDialogOpen] = useState(false);
   const [hostname, setHostname] = useState<string | null>(null);
   const [hostFilter, setHostFilter] = useState<string>('all');
+  const [readLengthFilter, setReadLengthFilter] = useState<'all' | WebLinkReadLength>('all');
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const { libraryFocus, clearLibraryFocus } = useUiFocusStore();
 
@@ -84,6 +88,10 @@ export function LibraryScreen() {
   const filteredBooks = useMemo(
     () => (hostFilter === 'all' ? books : books.filter((b) => !b.hostname || b.hostname === hostFilter)),
     [books, hostFilter]
+  );
+  const filteredWebLinks = useMemo(
+    () => (readLengthFilter === 'all' ? webLinks : webLinks.filter((l) => l.readLength === readLengthFilter)),
+    [webLinks, readLengthFilter]
   );
 
   return (
@@ -137,12 +145,29 @@ export function LibraryScreen() {
         ))}
       </div>
 
+      {tab === 'webLinks' && (
+        <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+          {(['all', 'short', 'long'] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setReadLengthFilter(r)}
+              className={clsx(
+                'rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors',
+                readLengthFilter === r ? 'bg-surface text-accentLibrary shadow-sm' : 'text-muted hover:text-foreground'
+              )}
+            >
+              {r === 'all' ? 'All' : READ_LENGTH_LABEL[r]}
+            </button>
+          ))}
+        </div>
+      )}
+
       {tab === 'books' ? (
         <BooksGrid books={filteredBooks} hostname={hostname} highlightId={highlightId} onEmptyAdd={() => setBookDialogOpen(true)} />
       ) : tab === 'videos' ? (
         <VideosGrid videos={videos} highlightId={highlightId} onEmptyAdd={() => setVideoDialogOpen(true)} />
       ) : (
-        <WebLinksGrid webLinks={webLinks} onEmptyAdd={() => setWebLinkDialogOpen(true)} />
+        <WebLinksGrid webLinks={filteredWebLinks} onEmptyAdd={() => setWebLinkDialogOpen(true)} />
       )}
 
       <NewBookDialog open={bookDialogOpen} onClose={() => setBookDialogOpen(false)} />
@@ -598,14 +623,24 @@ function WebLinksGrid({ webLinks, onEmptyAdd }: { webLinks: WebLink[]; onEmptyAd
                 <span className="truncate text-[11px] text-muted">{domain}</span>
               </div>
               <p className="line-clamp-2 text-sm font-medium leading-snug">{link.title}</p>
-              <select
-                value={link.status}
-                onChange={(e) => updateWebLink(link.id, { status: e.target.value as WebLinkStatus })}
-                className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
-              >
-                <option value="to-explore">To explore</option>
-                <option value="explored">Explored</option>
-              </select>
+              <div className="flex flex-wrap gap-1.5">
+                <select
+                  value={link.status}
+                  onChange={(e) => updateWebLink(link.id, { status: e.target.value as WebLinkStatus })}
+                  className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+                >
+                  <option value="to-explore">To explore</option>
+                  <option value="explored">Explored</option>
+                </select>
+                <select
+                  value={link.readLength}
+                  onChange={(e) => updateWebLink(link.id, { readLength: e.target.value as WebLinkReadLength })}
+                  className="w-fit rounded-md border border-border bg-background px-1.5 py-0.5 text-xs"
+                >
+                  <option value="short">Short read</option>
+                  <option value="long">Long read</option>
+                </select>
+              </div>
               <div className="mt-auto flex items-center justify-between pt-1">
                 <span className="text-[11px] text-muted">{formatDate(link.createdAt)}</span>
                 <button
@@ -628,16 +663,18 @@ function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
+  const [readLength, setReadLength] = useState<WebLinkReadLength>('short');
   const [fetching, setFetching] = useState(false);
 
   const submit = async () => {
     if (!url.trim()) return;
     setFetching(true);
-    await addWebLink(url.trim(), title.trim(), notes.trim() || null);
+    await addWebLink(url.trim(), title.trim(), notes.trim() || null, readLength);
     setFetching(false);
     setUrl('');
     setTitle('');
     setNotes('');
+    setReadLength('short');
     onClose();
   };
 
@@ -652,6 +689,23 @@ function NewWebLinkDialog({ open, onClose }: { open: boolean; onClose: () => voi
         </Field>
         <Field label="Notes (optional)">
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Why you saved this…" />
+        </Field>
+        <Field label="How long a read is this?">
+          <div className="inline-flex items-center gap-0.5 rounded-lg border border-border bg-background p-0.5">
+            {(['short', 'long'] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReadLength(r)}
+                className={clsx(
+                  'rounded-md px-3.5 py-1.5 text-sm font-medium transition-colors',
+                  readLength === r ? 'bg-surface text-accentLibrary shadow-sm' : 'text-muted hover:text-foreground'
+                )}
+              >
+                {READ_LENGTH_LABEL[r]}
+              </button>
+            ))}
+          </div>
         </Field>
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>

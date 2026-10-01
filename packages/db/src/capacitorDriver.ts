@@ -155,6 +155,8 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
   await ensureColumn('tasks', 'linkedMilestoneId', 'TEXT');
   await ensureColumn('books', 'syncedToDrive', 'INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('books', 'driveFileId', 'TEXT');
+  // DEFAULT 'short' backfills every existing row automatically — see electronDriver.ts's own note.
+  await ensureColumn('webLinks', 'readLength', "TEXT NOT NULL DEFAULT 'short'");
 
   async function tableIsEmpty(table: string): Promise<boolean> {
     const result = await db.query(`SELECT COUNT(*) as count FROM ${table}`);

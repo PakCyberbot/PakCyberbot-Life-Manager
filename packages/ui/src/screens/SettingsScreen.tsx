@@ -106,6 +106,23 @@ export function SettingsScreen() {
           </div>
           <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
             <div>
+              <p className="text-sm font-medium">Window zoom</p>
+              <p className="text-xs text-muted">Everything too small or too large? Resize the whole app's text and layout.</p>
+            </div>
+            <div className="shrink-0 text-right text-xs text-muted">
+              <p>
+                <kbd className="rounded border border-border bg-background px-1">Ctrl</kbd> +{' '}
+                <kbd className="rounded border border-border bg-background px-1">Shift</kbd> +{' '}
+                <kbd className="rounded border border-border bg-background px-1">+</kbd> to zoom in
+              </p>
+              <p>
+                <kbd className="rounded border border-border bg-background px-1">Ctrl</kbd> +{' '}
+                <kbd className="rounded border border-border bg-background px-1">−</kbd> to zoom out
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
+            <div>
               <p className="text-sm font-medium">Time Table clock</p>
               <p className="text-xs text-muted">Which clock face the Time Table's Clock view shows.</p>
             </div>
@@ -210,6 +227,22 @@ export function SettingsScreen() {
       <JobSearchesCard />
 
       <EntertainmentPromptCard />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Help &amp; feedback</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-3">
+          <p className="text-sm text-muted">Found a bug, or something behaving oddly? Open an issue on GitHub.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => getApi().system.openExternal('https://github.com/PakCyberbot/PakCyberbot-Life-Manager/issues')}
+          >
+            <ExternalLink size={14} /> Report a bug
+          </Button>
+        </CardContent>
+      </Card>
 
       <p className="text-center text-xs text-muted">PakCyberbot Life Manager · v0.1.0 (desktop, local-first)</p>
     </div>
