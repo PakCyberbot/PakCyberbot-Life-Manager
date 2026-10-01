@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarClock, CalendarCheck2, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useCalendarStore } from '@life-manager/core';
-import { formatDate, toLocalDateKey, isSameMonth, type CalendarEvent } from '@life-manager/shared';
+import { toLocalDateKey, isSameMonth, isPastEvent, relativeDayLabel, type CalendarEvent } from '@life-manager/shared';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Dialog } from '../components/ui/Dialog';
@@ -24,28 +24,6 @@ function colorClass(color: string) {
 // toLocaleTimeString (locale-formatted, often 12h with AM/PM, not what that input accepts).
 function toLocalTimeInputValue(d: Date): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-// An event is "archived" the instant it's in the past — computed fresh every render from
-// startAt/endAt, never stored. A stored flag would need something to flip it (a background job,
-// a check on every boot) and could drift; a computed check is always correct with zero upkeep.
-function isPastEvent(e: CalendarEvent, now: Date): boolean {
-  return new Date(e.endAt ?? e.startAt).getTime() < now.getTime();
-}
-
-// "Today"/"Tomorrow"/"Yesterday" read far more naturally in a dated list than a bare date, falling
-// back to the weekday name within the next week and a plain formatted date beyond that. Both dates
-// are first reduced to local day-keys (never raw instants) before diffing, so this can't be thrown
-// off by time-of-day — only the calendar day itself matters here.
-function relativeDayLabel(iso: string, now: Date): string {
-  const eventKey = toLocalDateKey(new Date(iso));
-  const todayKey = toLocalDateKey(now);
-  const diffDays = Math.round((new Date(eventKey).getTime() - new Date(todayKey).getTime()) / 86_400_000);
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Tomorrow';
-  if (diffDays === -1) return 'Yesterday';
-  if (diffDays > 1 && diffDays < 7) return new Date(iso).toLocaleDateString(undefined, { weekday: 'long' });
-  return formatDate(iso);
 }
 
 type Tab = 'upcoming' | 'archived';

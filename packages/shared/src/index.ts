@@ -85,6 +85,31 @@ export interface CalendarEvent extends BaseRow {
   linkedTaskId?: ID | null;
 }
 
+/** An event is "archived" the instant it's in the past — computed fresh from startAt/endAt every
+ * time this is called, never stored as a flag. A stored flag would need something to flip it (a
+ * background job, a check on every boot) and could drift out of sync; a computed check is always
+ * correct with zero upkeep. Shared by both apps' Calendar screens so "what counts as past" can
+ * never quietly diverge between them. */
+export function isPastEvent(e: CalendarEvent, now: Date): boolean {
+  return new Date(e.endAt ?? e.startAt).getTime() < now.getTime();
+}
+
+/** "Today"/"Tomorrow"/"Yesterday" read far more naturally in a dated list than a bare date,
+ * falling back to the weekday name within the next week and a plain formatted date beyond that.
+ * Both dates are first reduced to local day-keys (never raw instants) before diffing, so this
+ * can't be thrown off by time-of-day — only the calendar day itself matters here. Shared by both
+ * apps' Calendar screens for the Upcoming/Archived event lists. */
+export function relativeDayLabel(iso: string, now: Date): string {
+  const eventKey = toLocalDateKey(new Date(iso));
+  const todayKey = toLocalDateKey(now);
+  const diffDays = Math.round((new Date(eventKey).getTime() - new Date(todayKey).getTime()) / 86_400_000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Tomorrow';
+  if (diffDays === -1) return 'Yesterday';
+  if (diffDays > 1 && diffDays < 7) return new Date(iso).toLocaleDateString(undefined, { weekday: 'long' });
+  return formatDate(iso);
+}
+
 // ---------------------------------------------------------------------------
 // Money — a personal savings total + a wishlist, not full bookkeeping.
 // (Account/Transaction/Budget below are the original accounts/transactions/
