@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Badge } from '../components/ui/Badge';
 import { EmptyState } from '../components/ui/EmptyState';
+import { QuoteText } from '../components/ui/QuoteText';
 import { TimeTableClock } from '../components/timetable/ClockView';
 import { LiveRotatingClock } from '../components/timetable/LiveRotatingClock';
 import type { ScreenId } from '../navigation';
@@ -107,8 +108,14 @@ export function DashboardScreen({ onNavigate }: { onNavigate: (s: ScreenId) => v
       {currentQuote && (
         <Card className="flex items-start gap-3 border-none bg-gradient-to-br from-accentLibrary/10 via-surface to-surface p-5">
           <QuoteIcon size={18} className="mt-0.5 shrink-0 text-accentLibrary" />
-          <div className="flex-1">
-            <p className="text-sm italic leading-relaxed text-foreground/90">"{currentQuote.text}"</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-1 text-sm italic leading-relaxed text-foreground/90">
+              <span className="shrink-0">"</span>
+              <div className="min-w-0 flex-1">
+                <QuoteText text={currentQuote.text} className="text-sm italic leading-relaxed text-foreground/90" />
+              </div>
+              <span className="shrink-0">"</span>
+            </div>
             {currentQuote.author && <p className="mt-1.5 text-xs text-muted">— {currentQuote.author}</p>}
           </div>
           {quotes.length > 1 && (

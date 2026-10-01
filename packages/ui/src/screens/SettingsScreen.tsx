@@ -47,6 +47,7 @@ import { Button } from '../components/ui/Button';
 import { Switch } from '../components/ui/Switch';
 import { Field, Input, Select, Textarea } from '../components/ui/FormControls';
 import { NewsCategoriesDialog } from '../components/news/NewsCategoriesDialog';
+import { renderQuoteMarkdown } from '../lib/quoteMarkdown';
 import clsx from 'clsx';
 
 export function SettingsScreen() {
@@ -286,7 +287,7 @@ function QuotesCard() {
           {quotes.map((q) => (
             <div key={q.id} className="flex items-start gap-2 rounded-lg bg-background px-3 py-2 text-sm">
               <div className="min-w-0 flex-1">
-                <p className="italic leading-snug">"{q.text}"</p>
+                <p className="italic leading-snug">"{renderQuoteMarkdown(q.text)}"</p>
                 {q.author && <p className="mt-0.5 text-xs text-muted">— {q.author}</p>}
               </div>
               <button onClick={() => removeQuote(q.id)} className="mt-0.5 shrink-0 text-muted hover:text-red-500">

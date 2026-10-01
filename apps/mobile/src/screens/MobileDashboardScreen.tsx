@@ -11,7 +11,7 @@ import {
   pickRandomQuote,
 } from '@life-manager/core';
 import { DAY_NAMES, formatCurrency, formatDate, isSameMonth } from '@life-manager/shared';
-import { Card, CardContent, CardHeader, CardTitle, Badge, ProgressBar, TimeTableClock, LiveRotatingClock } from '@life-manager/ui';
+import { Card, CardContent, CardHeader, CardTitle, Badge, ProgressBar, TimeTableClock, LiveRotatingClock, QuoteText } from '@life-manager/ui';
 import type { MobileScreenId } from '../navigation';
 import clsx from 'clsx';
 
@@ -93,8 +93,14 @@ export function MobileDashboardScreen({ onNavigate }: { onNavigate: (s: MobileSc
       {currentQuote && (
         <Card className="flex items-start gap-3 border-none bg-gradient-to-br from-accentLibrary/10 via-surface to-surface p-4">
           <QuoteIcon size={16} className="mt-0.5 shrink-0 text-accentLibrary" />
-          <div className="flex-1">
-            <p className="text-sm italic leading-relaxed text-foreground/90">"{currentQuote.text}"</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-1 text-sm italic leading-relaxed text-foreground/90">
+              <span className="shrink-0">"</span>
+              <div className="min-w-0 flex-1">
+                <QuoteText text={currentQuote.text} className="text-sm italic leading-relaxed text-foreground/90" />
+              </div>
+              <span className="shrink-0">"</span>
+            </div>
             {currentQuote.author && <p className="mt-1.5 text-xs text-muted">— {currentQuote.author}</p>}
           </div>
           {quotes.length > 1 && (

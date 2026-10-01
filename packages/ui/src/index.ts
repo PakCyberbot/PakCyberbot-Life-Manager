@@ -18,3 +18,5 @@ export { Label, Input, Textarea, Select, Field } from './components/ui/FormContr
 export { Switch } from './components/ui/Switch';
 export { Toast } from './components/ui/Toast';
 export { PageNumberDial } from './components/ui/PageNumberDial';
+export { QuoteText } from './components/ui/QuoteText';
+export { renderQuoteMarkdown } from './lib/quoteMarkdown';
