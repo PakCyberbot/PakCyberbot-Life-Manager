@@ -21,6 +21,7 @@
 // purpose-built plugin.
 
 import { Browser } from '@capacitor/browser';
+import { CapacitorHttp, type HttpOptions, type HttpResponse } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { FileTransfer } from '@capacitor/file-transfer';
 import type { DriveApi, DriveConnectResult, DrivePullIfNewerResult, DriveStatus, DriveSyncResult } from '@life-manager/core';
@@ -31,6 +32,26 @@ const SCOPES = 'https://www.googleapis.com/auth/drive.file openid email';
 const DRIVE_FOLDER_NAME = 'PakCyberbot Life Manager';
 const DB_FILE_NAME = 'life-manager.sqlite';
 const OAUTH_TIMEOUT_MS = 120_000;
+
+// Real bug found in the field, in two rounds: Pull got stuck indefinitely on "Pulling…" with no
+// error and no crash, confirmed still true after capping every one of this file's own calls with
+// a plain AbortController-based fetch() timeout (the same fix already applied to mobileApi.ts's
+// image fetches) — this device sat well past that timeout window with zero change. The actual
+// cause: this file's REST calls went through the global `fetch()` that `CapacitorHttp.enabled:
+// true` patches to route through native networking (see capacitor.config.ts) — and that patched
+// fetch does not reliably honor an AbortSignal the way a real browser's fetch does, so
+// controller.abort() was a silent no-op against it; the underlying native HTTP call just kept
+// running with no way for JS to detect or cancel it. `FileTransfer.downloadFile/uploadFile`
+// elsewhere in this file were never affected, because that's a separate, purpose-built native
+// plugin with its own genuine connectTimeout/readTimeout support — confirmed by reading its own
+// type definitions, not assumed. Fixed by calling `CapacitorHttp.request()` directly instead of
+// the patched global fetch for every REST call in this file: the exact same native plugin
+// FileTransfer already proven to respect timeouts correctly, just its generic HTTP sibling.
+const HTTP_TIMEOUT_MS = 20_000;
+
+async function driveFetch(options: HttpOptions): Promise<HttpResponse> {
+  return CapacitorHttp.request({ connectTimeout: HTTP_TIMEOUT_MS, readTimeout: HTTP_TIMEOUT_MS, ...options });
+}
 
 // lastPushedAt/lastPulledAt/driveFileModifiedTime are genuinely per-device facts ("what does THIS
 // device believe about its last sync"), but used to be stored as rows in the synced SQLite
@@ -91,19 +112,19 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
     const refreshToken = await store.getSetting('googleRefreshToken');
     if (!clientId || !clientSecret || !refreshToken) return null;
 
-    const res = await fetch('https://oauth2.googleapis.com/token', {
+    const res = await driveFetch({
+      url: 'https://oauth2.googleapis.com/token',
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
+      data: new URLSearchParams({
         client_id: clientId,
         client_secret: clientSecret,
         refresh_token: refreshToken,
         grant_type: 'refresh_token',
-      }),
+      }).toString(),
     });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { access_token?: string };
-    return data.access_token ?? null;
+    if (res.status < 200 || res.status >= 300) return null;
+    return (res.data as { access_token?: string } | undefined)?.access_token ?? null;
   }
 
   async function status(): Promise<DriveStatus> {
@@ -169,24 +190,25 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
           }
 
           try {
-            const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+            const tokenRes = await driveFetch({
+              url: 'https://oauth2.googleapis.com/token',
               method: 'POST',
               headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-              body: new URLSearchParams({
+              data: new URLSearchParams({
                 client_id: clientId,
                 client_secret: clientSecret,
                 code: event.code,
                 grant_type: 'authorization_code',
                 redirect_uri: redirectUri,
-              }),
+              }).toString(),
             });
-            const tokenData = (await tokenRes.json()) as {
+            const tokenData = (tokenRes.data ?? {}) as {
               refresh_token?: string;
               access_token?: string;
               error_description?: string;
             };
 
-            if (!tokenRes.ok || !tokenData.refresh_token) {
+            if (tokenRes.status < 200 || tokenRes.status >= 300 || !tokenData.refresh_token) {
               finish({
                 ok: false,
                 error:
@@ -199,10 +221,11 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
 
             let email: string | undefined;
             try {
-              const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+              const userRes = await driveFetch({
+                url: 'https://www.googleapis.com/oauth2/v2/userinfo',
                 headers: { Authorization: `Bearer ${tokenData.access_token}` },
               });
-              if (userRes.ok) email = ((await userRes.json()) as { email?: string }).email;
+              if (userRes.status >= 200 && userRes.status < 300) email = (userRes.data as { email?: string } | undefined)?.email;
             } catch {
               // Non-fatal — connection still succeeded even if we can't show an email.
             }
@@ -230,27 +253,29 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
     const q = encodeURIComponent(
       `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`
     );
-    const listRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`, {
+    const listRes = await driveFetch({
+      url: `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name)`,
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const listData = (await listRes.json()) as { files?: { id: string }[] };
+    const listData = (listRes.data ?? {}) as { files?: { id: string }[] };
     if (listData.files?.length) return listData.files[0].id;
 
-    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+    const createRes = await driveFetch({
+      url: 'https://www.googleapis.com/drive/v3/files',
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
+      data: JSON.stringify({ name: DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
     });
-    const createData = (await createRes.json()) as { id: string };
-    return createData.id;
+    return (createRes.data as { id: string }).id;
   }
 
   async function findFile(accessToken: string, folderId: string): Promise<{ id: string; modifiedTime: string } | null> {
     const q = encodeURIComponent(`name='${DB_FILE_NAME}' and '${folderId}' in parents and trashed=false`);
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`, {
+    const res = await driveFetch({
+      url: `https://www.googleapis.com/drive/v3/files?q=${q}&spaces=drive&fields=files(id,name,modifiedTime)`,
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const data = (await res.json()) as { files?: { id: string; modifiedTime: string }[] };
+    const data = (res.data ?? {}) as { files?: { id: string; modifiedTime: string }[] };
     return data.files?.[0] ?? null;
   }
 
@@ -262,6 +287,12 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       const dbFilePath = await store.getDatabaseFilePath();
       if (!dbFilePath) return { ok: false, error: 'Could not locate the database file on this device.' };
 
+      // The native connection stays open across a push (unlike pull/import, which close it
+      // first) and defaults to WAL journal mode — without this, whatever was most recently
+      // written but not yet checkpointed into the main file could be silently missing from the
+      // very bytes about to be uploaded. Doesn't close the connection, just merges the WAL back.
+      await store.checkpoint();
+
       const folderId = await findOrCreateFolder(accessToken);
       const existing = await findFile(accessToken, folderId);
       let fileId = existing?.id ?? null;
@@ -270,12 +301,13 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
       // new file needs its metadata (name/parent) created first via a plain
       // JSON POST, same as desktop, before its content can be set this way.
       if (!fileId) {
-        const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+        const createRes = await driveFetch({
+          url: 'https://www.googleapis.com/drive/v3/files',
           method: 'POST',
           headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: DB_FILE_NAME, parents: [folderId] }),
+          data: JSON.stringify({ name: DB_FILE_NAME, parents: [folderId] }),
         });
-        const created = (await createRes.json()) as { id?: string; error?: { message?: string } };
+        const created = (createRes.data ?? {}) as { id?: string; error?: { message?: string } };
         if (!created.id) return { ok: false, error: created.error?.message ?? 'Could not create the Drive file.' };
         fileId = created.id;
       }
@@ -287,6 +319,8 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
         path: dbFilePath,
         method: 'PATCH',
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/octet-stream' },
+        connectTimeout: 30_000,
+        readTimeout: 30_000,
       });
       const code = Number(result.responseCode);
       if (code < 200 || code >= 300) {
@@ -326,6 +360,11 @@ export function createMobileDriveSync(store: MobileDataStore): DriveApi {
         url: `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
         path: dbFilePath,
         headers: { Authorization: `Bearer ${accessToken}` },
+        // Defaults to 60s otherwise — this file is a personal database, typically a few MB at
+        // most, so failing faster surfaces a real network problem sooner than leaving the UI
+        // showing "Pulling…" for a full minute with no feedback.
+        connectTimeout: 30_000,
+        readTimeout: 30_000,
       });
 
       // localStorage, not store.setSetting — this has to survive the database file having just

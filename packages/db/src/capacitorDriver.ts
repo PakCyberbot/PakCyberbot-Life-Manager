@@ -74,6 +74,13 @@ export interface MobileDataStore {
    * reloads the app afterward; a fresh createCapacitorDataStore() call opens a new connection against the
    * freshly-written file, no explicit reopen needed here. */
   importRawDatabase(base64: string): Promise<void>;
+  /** Merges any pages sitting in the native WAL sidecar file back into the main database file,
+   * without closing the connection — call this right before reading the raw file bytes off disk
+   * for any reason (Drive push uploads getDatabaseFilePath() directly while the connection stays
+   * open, unlike pull/import). Without it, a push could silently upload a main file missing
+   * whatever was last written but not yet checkpointed, since this driver's native connection
+   * defaults to WAL journal mode. Best-effort — a failure here isn't fatal to the caller. */
+  checkpoint(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -193,6 +200,56 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
     }
   }
 
+  // Real bug found in the field: pulling a Drive-synced database onto a device reliably produced
+  // the exact "database disk image is malformed" corruption on the very next open — not the
+  // already-fixed infinite-loop scenario, a single ordinary pull. Root cause: this plugin's
+  // native connection (SQLCipher-based even in 'no-encryption' mode) defaults to WAL journal
+  // mode, which keeps a `<db>-wal`/`<db>-shm` sidecar pair alongside the main file for pages not
+  // yet merged in. A plain `sqlite.closeConnection()` relies on SQLite's own implicit final
+  // checkpoint to clean those up, which isn't guaranteed to fully succeed — and both Drive's
+  // pull() and local backup's importRawDatabase() immediately overwrite *only* the main file
+  // afterward (via FileTransfer.downloadFile / Filesystem.writeFile), never touching the sidecar
+  // files at all. A leftover, now-stale WAL/SHM pair sitting next to a completely different main
+  // file's bytes the instant the download lands is exactly the kind of inconsistency that
+  // produces this failure on next open. Fixed two ways, belt and braces: explicitly switching to
+  // `PRAGMA journal_mode=DELETE` before closing forces a real checkpoint and merges/removes the
+  // WAL pair as a side effect of leaving WAL mode at all (not relying on an implicit one), and
+  // the sidecar files are also explicitly deleted outright right before the overwrite regardless
+  // of whether the checkpoint fully cleaned them up.
+  async function checkpointAndClose(): Promise<void> {
+    try {
+      // Switching a WAL-mode connection to DELETE needs an exclusive lock, which — unlike a
+      // missing table or a bad query — can genuinely just sit and wait rather than fail fast if
+      // anything else has so much as a pending read against this connection. A hard timeout here
+      // is deliberate insurance: this pragma is pure cleanup (the sidecar-file deletion below is
+      // the real backstop for pull()/importRawDatabase() either way), so it must never be able to
+      // turn a close() call into the operation that hangs forever.
+      await Promise.race([
+        db.execute('PRAGMA journal_mode=DELETE'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('journal_mode=DELETE timed out')), 3000)),
+      ]);
+    } catch {
+      // Best-effort — if the pragma itself fails or times out, closing is still attempted below
+      // rather than leaving the connection open.
+    }
+    await sqlite.closeConnection(DB_NAME, false);
+    // Belt and braces, every time this connection closes (not just before importRawDatabase's own
+    // overwrite): the pragma above should already remove these as a side effect of leaving WAL
+    // mode, but that isn't guaranteed to fully succeed, and close() is also exactly what
+    // mobileDriveSync.ts's pull() calls right before FileTransfer.downloadFile overwrites the
+    // main file out from under whatever sidecar state is left — the same hazard, reached through
+    // a different caller.
+    if (dbFilePath) {
+      for (const suffix of ['-wal', '-shm', '-journal']) {
+        try {
+          await Filesystem.deleteFile({ path: `${dbFilePath}${suffix}` });
+        } catch {
+          // Fine if it doesn't exist — this is pure cleanup, not a required step.
+        }
+      }
+    }
+  }
+
   return {
     async list<T>(table: string, where?: Record<string, unknown>): Promise<T[]> {
       let sql = `SELECT * FROM ${table} WHERE deletedAt IS NULL`;
@@ -254,12 +311,20 @@ export async function createCapacitorDataStore(): Promise<MobileDataStore> {
 
     async importRawDatabase(base64: string): Promise<void> {
       if (!dbFilePath) throw new Error('Could not resolve the database file path.');
-      await sqlite.closeConnection(DB_NAME, false);
+      await checkpointAndClose();
       await Filesystem.writeFile({ path: dbFilePath, data: base64 });
     },
 
+    async checkpoint(): Promise<void> {
+      try {
+        await db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+      } catch {
+        // Best-effort — the caller (Drive push) still uploads whatever's on disk either way.
+      }
+    },
+
     async close(): Promise<void> {
-      await sqlite.closeConnection(DB_NAME, false);
+      await checkpointAndClose();
     },
   };
 }

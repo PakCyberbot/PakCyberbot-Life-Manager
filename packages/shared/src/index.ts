@@ -379,6 +379,20 @@ export function startOfMonth(reference: Date): Date {
   return new Date(reference.getFullYear(), reference.getMonth(), 1);
 }
 
+/** "YYYY-MM-DD" from a Date's own *local* calendar day — never use `toISOString().slice(0,10)`
+ * for this, which converts to UTC first and silently shifts the date by a day for any non-UTC
+ * timezone. Confirmed as the real cause of a family of Calendar bugs: the wrong day highlighted
+ * as "today", a newly-added timed event saving under the day *before* the one actually clicked,
+ * and an event's displayed time showing its UTC hour instead of its local one — see CLAUDE.md's
+ * Calendar section. Use this (or a real Date's own local getters) anywhere "what calendar day is
+ * this instant on, for the viewer" is the actual question. */
+export function toLocalDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ---------------------------------------------------------------------------
 // Time Table — a recurring weekly routine, distinct from Calendar's
 // date-specific events (see structure.md)
