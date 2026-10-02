@@ -72,6 +72,17 @@ async function cancelBySource(): Promise<void> {
  * its at-time notification — Capacitor would otherwise fire a notification whose `at` time has
  * already passed immediately on schedule, which isn't the intent of "1 day remaining". Returns
  * false (and schedules nothing) if permission is denied. */
+// Both notifications below are scheduled with `isExactNotification: false`, deliberately — real
+// bug found via live CDP debugging: `schedule()` defaults every notification's exactness to
+// `true`, and on Android 12+ without the separate "Alarms & reminders" special-access permission
+// (never granted by default, and POST_NOTIFICATIONS being granted doesn't imply it), the plugin
+// internally redirects to that system settings screen before scheduling anything — silently, with
+// no error, no timeout, and no visible UI change from the app's own side (the Settings card just
+// stays on "Updating…" forever). Confirmed exactly this: `LocalNotifications.schedule()` called
+// directly never resolved until that settings toggle was flipped by hand. A day-before/at-time
+// Calendar reminder has no real need for to-the-second precision the way an alarm clock does — an
+// inexact alarm still fires close to its target time and needs no extra permission or screen at
+// all, so this sidesteps the whole gap rather than adding a second permission flow for it.
 export async function scheduleCalendarNotifications(events: CalendarEvent[]): Promise<boolean> {
   const permission = await LocalNotifications.requestPermissions();
   if (permission.display !== 'granted') return false;
@@ -98,6 +109,7 @@ export async function scheduleCalendarNotifications(events: CalendarEvent[]): Pr
         body: `${e.title}${timeSuffix}`,
         channelId: CHANNEL_ID,
         extra: { source: SOURCE_TAG },
+        isExactNotification: false,
         schedule: { at: new Date(beforeMs), allowWhileIdle: true },
       });
     }
@@ -108,6 +120,7 @@ export async function scheduleCalendarNotifications(events: CalendarEvent[]): Pr
       body: 'Happening now.',
       channelId: CHANNEL_ID,
       extra: { source: SOURCE_TAG },
+      isExactNotification: false,
       schedule: { at: new Date(startMs), allowWhileIdle: true },
     });
   }
